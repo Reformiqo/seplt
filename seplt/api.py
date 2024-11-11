@@ -202,7 +202,7 @@ def set_si_qrcode(doc, method=None):
     img = segno.make_qr("Hello, World")
     
     # Define the file path
-    file_path = f"/home/frappe/frappe-bench/sites/sona.erpera.io/public/files/{doc.name}.png"
+    file_path = f"/home/frappe/frappe-bench/sites/seplt.frappe.cloud/public/files/{doc.name}.png"
     
     # Save the image to the file
     img.save(file_path, scale=15)  
