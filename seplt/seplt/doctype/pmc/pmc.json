@@ -1,0 +1,260 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:pmc_no",
+ "creation": "2024-07-19 20:16:39.635263",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "sales_order",
+  "product_name",
+  "customer_code",
+  "customer_name",
+  "pmc_no",
+  "artwork_no",
+  "cust_art_code",
+  "column_break_qeao",
+  "shade_card_no",
+  "effective_date",
+  "revision_no",
+  "special_instruction",
+  "prepared_by",
+  "approved_by",
+  "product_specifications_tab",
+  "tube_dia",
+  "wall_thickness",
+  "body_length",
+  "nozzle_type",
+  "nozzle_length",
+  "column_break_qyys",
+  "nozzle_dia",
+  "orifice_dia",
+  "collapsibility",
+  "shoulder_thickness",
+  "lacquer_porosity",
+  "raw_meterial_details_tab",
+  "aluminium_slug",
+  "lacquer_requirement",
+  "coating_requirement",
+  "printing_requirement",
+  "latex_requirement",
+  "cap_requirement",
+  "packaging_requirement",
+  "outer_packaging_requirement"
+ ],
+ "fields": [
+  {
+   "fieldname": "product_name",
+   "fieldtype": "Link",
+   "label": "Product Name",
+   "link_filters": "[[\"Item\",\"item_group\",\"=\",\"Finished Tube\"]]",
+   "options": "Item"
+  },
+  {
+   "fieldname": "customer_code",
+   "fieldtype": "Link",
+   "label": "Customer Code",
+   "options": "Customer"
+  },
+  {
+   "fetch_from": "customer_code.customer_name",
+   "fieldname": "customer_name",
+   "fieldtype": "Data",
+   "label": "Customer Name"
+  },
+  {
+   "fieldname": "pmc_no",
+   "fieldtype": "Data",
+   "label": "PMC No",
+   "unique": 1
+  },
+  {
+   "fieldname": "artwork_no",
+   "fieldtype": "Data",
+   "label": "Artwork No"
+  },
+  {
+   "fieldname": "cust_art_code",
+   "fieldtype": "Data",
+   "label": "Cust. Art. Code"
+  },
+  {
+   "fieldname": "shade_card_no",
+   "fieldtype": "Data",
+   "label": "Shade Card No"
+  },
+  {
+   "fieldname": "effective_date",
+   "fieldtype": "Data",
+   "label": "Effective Date"
+  },
+  {
+   "fieldname": "revision_no",
+   "fieldtype": "Data",
+   "label": "Revision No"
+  },
+  {
+   "fieldname": "special_instruction",
+   "fieldtype": "Data",
+   "label": "Special Instruction "
+  },
+  {
+   "fieldname": "prepared_by",
+   "fieldtype": "Data",
+   "label": "Prepared By"
+  },
+  {
+   "fieldname": "approved_by",
+   "fieldtype": "Data",
+   "label": "Approved By"
+  },
+  {
+   "fieldname": "column_break_qeao",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "product_specifications_tab",
+   "fieldtype": "Tab Break",
+   "label": "Product Specifications"
+  },
+  {
+   "fieldname": "tube_dia",
+   "fieldtype": "Data",
+   "label": "Tube Dia"
+  },
+  {
+   "fieldname": "wall_thickness",
+   "fieldtype": "Data",
+   "label": "Wall Thickness"
+  },
+  {
+   "fieldname": "body_length",
+   "fieldtype": "Data",
+   "label": "Body Length"
+  },
+  {
+   "fieldname": "nozzle_type",
+   "fieldtype": "Data",
+   "label": "Nozzle Type"
+  },
+  {
+   "fieldname": "nozzle_length",
+   "fieldtype": "Data",
+   "label": "Nozzle Length"
+  },
+  {
+   "fieldname": "nozzle_dia",
+   "fieldtype": "Data",
+   "label": "Nozzle Dia"
+  },
+  {
+   "fieldname": "orifice_dia",
+   "fieldtype": "Data",
+   "label": "Orifice Dia"
+  },
+  {
+   "fieldname": "shoulder_thickness",
+   "fieldtype": "Data",
+   "label": "Shoulder Thickness"
+  },
+  {
+   "fieldname": "collapsibility",
+   "fieldtype": "Data",
+   "label": "Collapsibility"
+  },
+  {
+   "fieldname": "lacquer_porosity",
+   "fieldtype": "Data",
+   "label": "Lacquer Porosity"
+  },
+  {
+   "fieldname": "column_break_qyys",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "raw_meterial_details_tab",
+   "fieldtype": "Tab Break",
+   "label": "Raw meterial details"
+  },
+  {
+   "fieldname": "aluminium_slug",
+   "fieldtype": "Table",
+   "label": "Aluminium Slug ",
+   "options": "Aluminium Slug"
+  },
+  {
+   "fieldname": "lacquer_requirement",
+   "fieldtype": "Table",
+   "label": "Lacquer Requirement",
+   "options": "Aluminium Slug"
+  },
+  {
+   "fieldname": "coating_requirement",
+   "fieldtype": "Table",
+   "label": "Coating Requirement",
+   "options": "Aluminium Slug"
+  },
+  {
+   "fieldname": "printing_requirement",
+   "fieldtype": "Table",
+   "label": "Printing Requirement ",
+   "options": "Aluminium Slug"
+  },
+  {
+   "fieldname": "latex_requirement",
+   "fieldtype": "Table",
+   "label": "Latex Requirement",
+   "options": "Aluminium Slug"
+  },
+  {
+   "fieldname": "cap_requirement",
+   "fieldtype": "Table",
+   "label": "Cap Requirement",
+   "options": "Aluminium Slug"
+  },
+  {
+   "fieldname": "packaging_requirement",
+   "fieldtype": "Table",
+   "label": "Packaging Requirement",
+   "options": "Aluminium Slug"
+  },
+  {
+   "fieldname": "outer_packaging_requirement",
+   "fieldtype": "Table",
+   "label": "Outer Packaging Requirement ",
+   "options": "Aluminium Slug"
+  },
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Sales Order",
+   "options": "Sales Order"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2024-09-10 12:37:51.340843",
+ "modified_by": "Administrator",
+ "module": "Sona",
+ "name": "PMC",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -1,0 +1,173 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:CL/24-25/{####}",
+ "creation": "2024-07-09 06:08:00.712118",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_wt61",
+  "product",
+  "supplier_or_customer",
+  "lot_no",
+  "box_no",
+  "column_break_qgrl",
+  "grb_nomrn_no_date",
+  "transaction_date",
+  "purchase_date",
+  "total_qty",
+  "section_break_fkzj",
+  "checklist",
+  "section_break_oppb",
+  "received_lot_no",
+  "column_break_afzn",
+  "received_bags",
+  "section_break_ydxo",
+  "reference",
+  "amended_from",
+  "column_break_ieto",
+  "transaction_type"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_wt61",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "product",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Product",
+   "options": "Item"
+  },
+  {
+   "fieldname": "column_break_qgrl",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "grb_nomrn_no_date",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "GRB No./MRN No. Date"
+  },
+  {
+   "fieldname": "total_qty",
+   "fieldtype": "Data",
+   "label": "Total Qty"
+  },
+  {
+   "fieldname": "section_break_fkzj",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "checklist",
+   "fieldtype": "Table",
+   "label": "Checklist",
+   "options": "Transaction Checklist Table"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Checklist Transaction",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "reference",
+   "fieldtype": "Data",
+   "label": "Reference"
+  },
+  {
+   "fieldname": "section_break_ydxo",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "column_break_ieto",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "transaction_type",
+   "fieldtype": "Data",
+   "label": "Transaction Type"
+  },
+  {
+   "default": "Today",
+   "fieldname": "transaction_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Transaction Date"
+  },
+  {
+   "fieldname": "section_break_oppb",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "received_lot_no",
+   "fieldtype": "Data",
+   "label": "Received Lot No"
+  },
+  {
+   "fieldname": "column_break_afzn",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "received_bags",
+   "fieldtype": "Data",
+   "label": "Received Bags/ Cans (in No)"
+  },
+  {
+   "fieldname": "supplier_or_customer",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Supplier / Customer"
+  },
+  {
+   "fieldname": "purchase_date",
+   "fieldtype": "Date",
+   "label": "Purchase Date"
+  },
+  {
+   "fieldname": "lot_no",
+   "fieldtype": "Data",
+   "label": "Lot No"
+  },
+  {
+   "fieldname": "box_no",
+   "fieldtype": "Data",
+   "label": "Box No"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2024-10-27 03:27:11.665410",
+ "modified_by": "Administrator",
+ "module": "Sona",
+ "name": "Checklist Transaction",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

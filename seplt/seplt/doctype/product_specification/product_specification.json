@@ -1,0 +1,149 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:specification_number",
+ "creation": "2024-07-05 01:52:20.530819",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "specification_number",
+  "revision_no",
+  "effective_date",
+  "storage_condition",
+  "column_break_cyqn",
+  "supersedes",
+  "department",
+  "reference",
+  "manufacturing_location",
+  "tab_2_tab",
+  "tests",
+  "reseaon_for_revesion_tab",
+  "change_detail",
+  "prepared_by",
+  "designation",
+  "column_break_nmnv",
+  "date",
+  "reviewed_and_approved_by"
+ ],
+ "fields": [
+  {
+   "fetch_from": "item_code.custom_specification_number",
+   "fieldname": "specification_number",
+   "fieldtype": "Data",
+   "label": "Specification Number",
+   "unique": 1
+  },
+  {
+   "fieldname": "revision_no",
+   "fieldtype": "Data",
+   "label": "Revision No."
+  },
+  {
+   "fetch_from": "item_code.custom_effective_date",
+   "fieldname": "effective_date",
+   "fieldtype": "Date",
+   "label": "Effective Date"
+  },
+  {
+   "fieldname": "storage_condition",
+   "fieldtype": "Data",
+   "label": "Storage Condition"
+  },
+  {
+   "fieldname": "column_break_cyqn",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "supersedes",
+   "fieldtype": "Data",
+   "label": "Supersedes"
+  },
+  {
+   "fieldname": "department",
+   "fieldtype": "Data",
+   "label": "Department"
+  },
+  {
+   "fieldname": "reference",
+   "fieldtype": "Data",
+   "label": "Reference"
+  },
+  {
+   "fieldname": "manufacturing_location",
+   "fieldtype": "Data",
+   "label": "Manufacturing Location"
+  },
+  {
+   "fieldname": "tab_2_tab",
+   "fieldtype": "Tab Break",
+   "label": "Test Table"
+  },
+  {
+   "fieldname": "tests",
+   "fieldtype": "Table",
+   "label": "Tests",
+   "options": "Test"
+  },
+  {
+   "fieldname": "reseaon_for_revesion_tab",
+   "fieldtype": "Tab Break",
+   "label": "Reseaon For Revesion"
+  },
+  {
+   "fieldname": "change_detail",
+   "fieldtype": "Data",
+   "label": "Change Detail"
+  },
+  {
+   "fieldname": "prepared_by",
+   "fieldtype": "Data",
+   "label": "Prepared By"
+  },
+  {
+   "fieldname": "designation",
+   "fieldtype": "Data",
+   "label": "Designation"
+  },
+  {
+   "fieldname": "column_break_nmnv",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Today",
+   "fieldname": "date",
+   "fieldtype": "Date",
+   "label": "Date",
+   "options": "Today"
+  },
+  {
+   "fieldname": "reviewed_and_approved_by",
+   "fieldtype": "Data",
+   "label": "Reviewed and Approved by"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2024-07-09 05:48:36.517982",
+ "modified_by": "Administrator",
+ "module": "Sona",
+ "name": "Product Specification",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

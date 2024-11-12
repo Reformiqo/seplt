@@ -1,0 +1,50 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2024-07-09 05:56:32.820629",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "parameters",
+  "specification",
+  "observation"
+ ],
+ "fields": [
+  {
+   "fieldname": "parameters",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Parameters",
+   "options": "Physical condition of the vehicle\nAnt other material accompanied with the PM\nVisual / Physical Inspection\nDetail on Received Bags\nMaterial\nSource & Grade\nPacking Condition\nPacking Quality\nDimension\nPhysical Condition of Packing  Materials\nForeign Particles present on Packing Material\nDust Particles present on Packing Material\nPhysical Verification\nReceive Lot No.\nReceived Packing Material (in Nos./Bundles/Bag)\nParty COA\nArrangement of PM (Bundles/Bags) on Pallets\nAny Rejected Packing aterial\nWeight per Bags/Liter/Kg per can\nWeighing of Bags (Randomly any five bags/ five can)\nAny other offensive smell/odor from vehicle\nMaterial receive on pallets\nPallets made up to wood\nAre the wooden pallets heat treated\nPhysical condition of bags\nForeign particles presents on RM bags\nDust particles presents on RM bags\nLeakage in can\nReceived Lot No.\nReceived Bags/ Cans (in No)\nParty COA\nArrangement of RM Bags on pallets\nAny Rejected RM Bags\nDetails on Received Packing Materials\nProduct Name\nAny Rejected Material\nReceived Packing Material(in Nos./Bundles/Bags)"
+  },
+  {
+   "fieldname": "specification",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Specification"
+  },
+  {
+   "fieldname": "observation",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Observation",
+   "options": "Ok\nNot Ok\nYes\nNo\nReceived\nNot Received\nFound\nNot Found\nNormal\nDamaged Condition\nReceived\nMissing\nProperly arranged"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2024-08-17 16:51:50.589123",
+ "modified_by": "Administrator",
+ "module": "Sona",
+ "name": "Checklist Table",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

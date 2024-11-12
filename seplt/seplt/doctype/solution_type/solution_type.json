@@ -1,0 +1,149 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2024-08-24 09:53:59.335276",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "effective_date",
+  "revision_no",
+  "review_date",
+  "supersedes",
+  "column_break_uycd",
+  "sop_name",
+  "prepared_by",
+  "department",
+  "reviewd_and_approved_by",
+  "info_tab",
+  "purpose",
+  "scope",
+  "responsibilities",
+  "precautions",
+  "column_break_xvfj",
+  "procedure",
+  "formats",
+  "abbrevations",
+  "change_history"
+ ],
+ "fields": [
+  {
+   "fieldname": "effective_date",
+   "fieldtype": "Date",
+   "label": "Effective Date"
+  },
+  {
+   "fieldname": "revision_no",
+   "fieldtype": "Data",
+   "label": "Revision No"
+  },
+  {
+   "fieldname": "review_date",
+   "fieldtype": "Date",
+   "label": "Review Date"
+  },
+  {
+   "fieldname": "supersedes",
+   "fieldtype": "Data",
+   "label": "Supersedes"
+  },
+  {
+   "fieldname": "sop_name",
+   "fieldtype": "Data",
+   "label": "SOP Name"
+  },
+  {
+   "fieldname": "department",
+   "fieldtype": "Select",
+   "label": "Department",
+   "options": "\nQA\nQC"
+  },
+  {
+   "fieldname": "prepared_by",
+   "fieldtype": "Link",
+   "label": "Prepared By",
+   "options": "Employee"
+  },
+  {
+   "fieldname": "reviewd_and_approved_by",
+   "fieldtype": "Data",
+   "label": "Reviewd and Approved By"
+  },
+  {
+   "fieldname": "info_tab",
+   "fieldtype": "Tab Break",
+   "label": "Info"
+  },
+  {
+   "fieldname": "purpose",
+   "fieldtype": "Data",
+   "label": "Purpose"
+  },
+  {
+   "fieldname": "scope",
+   "fieldtype": "Data",
+   "label": "Scope"
+  },
+  {
+   "fieldname": "responsibilities",
+   "fieldtype": "Data",
+   "label": "Responsibilities"
+  },
+  {
+   "fieldname": "precautions",
+   "fieldtype": "Data",
+   "label": "Precautions"
+  },
+  {
+   "fieldname": "procedure",
+   "fieldtype": "Data",
+   "label": "Procedure"
+  },
+  {
+   "fieldname": "formats",
+   "fieldtype": "Data",
+   "label": "Formats"
+  },
+  {
+   "fieldname": "abbrevations",
+   "fieldtype": "Data",
+   "label": "Abbrevations"
+  },
+  {
+   "fieldname": "change_history",
+   "fieldtype": "Data",
+   "label": "Change History"
+  },
+  {
+   "fieldname": "column_break_uycd",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_xvfj",
+   "fieldtype": "Column Break"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2024-08-24 10:01:38.895719",
+ "modified_by": "Administrator",
+ "module": "Sona",
+ "name": "Solution Type",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
