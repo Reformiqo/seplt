@@ -337,26 +337,42 @@ def validate(doc, method=None):
         update_consumed_qty(doc)
         set_document_reference(doc)
     
+# @frappe.whitelist()
+# def update_consumed_qty(doc, method=None):
+#     data = []
+#     if doc.supplied_items:
+#         for i in doc.custom_actual_consumed_items:
+#             data.append(i.item)
+#         for item in doc.supplied_items:
+#             if item.main_item_code not in data:
+#                 doc.append("custom_actual_consumed_items", {
+#                     "item": item.main_item_code,
+#                     "actual_consumed_qty": round(item.consumed_qty, 3)
+#                 })
+#         frappe.db.commit()
+    
+#         for i in doc.custom_actual_consumed_items:
+#             for item in doc.supplied_items:
+#                 if i.item == item.main_item_code:
+#                     item.consumed_qty = i.actual_consumed_qty
+#                     break
+#     frappe.db.commit()
 @frappe.whitelist()
 def update_consumed_qty(doc, method=None):
-    data = []
-    if doc.supplied_items:
-        for i in doc.custom_actual_consumed_items:
-            data.append(i.item)
-        for item in doc.supplied_items:
-            if item.main_item_code not in data:
-                doc.append("custom_actual_consumed_items", {
-                    "item": item.main_item_code,
-                    "actual_consumed_qty": round(item.consumed_qty, 3)
-                })
-        frappe.db.commit()
-    
-        for i in doc.custom_actual_consumed_items:
-            for item in doc.supplied_items:
-                if i.item == item.main_item_code:
-                    item.consumed_qty = i.actual_consumed_qty
-                    break
-    frappe.db.commit()
+    # Collect all items in `custom_actual_consumed_items`
+    custom_consumed_items = {item.item: item.actual_consumed_qty for item in doc.custom_actual_consumed_items}
+
+    # Update `supplied_items` consumed_qty based on `custom_actual_consumed_items`
+    for supplied_item in doc.supplied_items:
+        main_item_code = supplied_item.main_item_code
+        
+        # Check if this item exists in custom_consumed_items
+        if main_item_code in custom_consumed_items:
+            # Update the consumed_qty with actual_consumed_qty from the custom table
+            supplied_item.consumed_qty = custom_consumed_items[main_item_code]
+
+    # Save the changes made to the document
+    doc.save()
 @frappe.whitelist()
 def reset_password(email):
     user = frappe.get_doc('User', email)
