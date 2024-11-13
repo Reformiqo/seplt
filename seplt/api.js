@@ -6,7 +6,7 @@ frappe.ui.form.on("Purchase Receipt", {
             {
 
     frappe.call({
-        method: "sona.api.get_transporter",
+        method: "seplt.api.get_transporter",
         args: {
             doc: rm.doc.subcontracting_receipt
         },
