@@ -336,6 +336,8 @@ def validate(doc, method=None):
     if doc.doctype == "Subcontracting Receipt":
         update_consumed_qty(doc)
         set_document_reference(doc)
+
+# following code for update consumed qrt commented by pratik pathak on 13/11/2024
     
 # @frappe.whitelist()
 # def update_consumed_qty(doc, method=None):
@@ -358,21 +360,24 @@ def validate(doc, method=None):
 #                     break
 #     frappe.db.commit()
 @frappe.whitelist()
-def update_consumed_qty(doc, method=None):
-    # Collect all items in `custom_actual_consumed_items`
-    custom_consumed_items = {item.item: item.actual_consumed_qty for item in doc.custom_actual_consumed_items}
 
-    # Update `supplied_items` consumed_qty based on `custom_actual_consumed_items`
-    for supplied_item in doc.supplied_items:
-        main_item_code = supplied_item.main_item_code
+# Following updated code commented by Pratik Pathak on 13/11/2024, To check server script working 
+# def update_consumed_qty(doc, method=None):
+#     # Collect all items in `custom_actual_consumed_items`
+#     custom_consumed_items = {item.item: item.actual_consumed_qty for item in doc.custom_actual_consumed_items}
+
+#     # Update `supplied_items` consumed_qty based on `custom_actual_consumed_items`
+#     for supplied_item in doc.supplied_items:
+#         main_item_code = supplied_item.main_item_code
         
-        # Check if this item exists in custom_consumed_items
-        if main_item_code in custom_consumed_items:
-            # Update the consumed_qty with actual_consumed_qty from the custom table
-            supplied_item.consumed_qty = custom_consumed_items[main_item_code]
+#         # Check if this item exists in custom_consumed_items
+#         if main_item_code in custom_consumed_items:
+#             # Update the consumed_qty with actual_consumed_qty from the custom table
+#             supplied_item.consumed_qty = custom_consumed_items[main_item_code]
 
-    # Save the changes made to the document
-    doc.save()
+#     # Save the changes made to the document
+#     doc.save()
+	
 @frappe.whitelist()
 def reset_password(email):
     user = frappe.get_doc('User', email)
