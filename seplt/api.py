@@ -361,22 +361,38 @@ def validate(doc, method=None):
 #     frappe.db.commit()
 @frappe.whitelist()
 
-# Following updated code commented by Pratik Pathak on 13/11/2024, To check server script working 
-# def update_consumed_qty(doc, method=None):
-#     # Collect all items in `custom_actual_consumed_items`
-#     custom_consumed_items = {item.item: item.actual_consumed_qty for item in doc.custom_actual_consumed_items}
+# Following updated code creaded/updated by Pratik Pathak on 13/11/2024, To check server script working 
+@frappe.whitelist()
+def update_consumed_qty(doc, method=None):
+    data = []
+    
+    # Loop through 'custom_actual_consumed_items' to get the consumed items
+    if doc.supplied_items:
+        # First, collect items already present in 'custom_actual_consumed_items'
+        for i in doc.custom_actual_consumed_items:
+            data.append(i.item)
 
-#     # Update `supplied_items` consumed_qty based on `custom_actual_consumed_items`
-#     for supplied_item in doc.supplied_items:
-#         main_item_code = supplied_item.main_item_code
+        # Now, append new items with consumed quantities if not already in data
+        for item in doc.supplied_items:
+            if item.main_item_code not in data:
+                doc.append("custom_actual_consumed_items", {
+                    "item": item.main_item_code,
+                    "actual_consumed_qty": round(item.consumed_qty, 3)  # Round the consumed qty to 3 decimal places
+                })
+
+        # Commit the changes to save the new actual consumed items
+        frappe.db.commit()
+
+        # Now update the supplied items with the actual consumed quantities
+        for i in doc.custom_actual_consumed_items:
+            for item in doc.supplied_items:
+                if i.item == item.main_item_code:
+                    # Updating the consumed quantity to actual consumed quantity
+                    item.consumed_qty = i.actual_consumed_qty
+                    break
         
-#         # Check if this item exists in custom_consumed_items
-#         if main_item_code in custom_consumed_items:
-#             # Update the consumed_qty with actual_consumed_qty from the custom table
-#             supplied_item.consumed_qty = custom_consumed_items[main_item_code]
-
-#     # Save the changes made to the document
-#     doc.save()
+        # Commit after updating the consumed quantities
+        frappe.db.commit()
 	
 @frappe.whitelist()
 def reset_password(email):
