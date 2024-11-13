@@ -339,60 +339,60 @@ def validate(doc, method=None):
 
 # following code for update consumed qrt commented by pratik pathak on 13/11/2024
     
-# @frappe.whitelist()
-# def update_consumed_qty(doc, method=None):
-#     data = []
-#     if doc.supplied_items:
-#         for i in doc.custom_actual_consumed_items:
-#             data.append(i.item)
-#         for item in doc.supplied_items:
-#             if item.main_item_code not in data:
-#                 doc.append("custom_actual_consumed_items", {
-#                     "item": item.main_item_code,
-#                     "actual_consumed_qty": round(item.consumed_qty, 3)
-#                 })
-#         frappe.db.commit()
-    
-#         for i in doc.custom_actual_consumed_items:
-#             for item in doc.supplied_items:
-#                 if i.item == item.main_item_code:
-#                     item.consumed_qty = i.actual_consumed_qty
-#                     break
-#     frappe.db.commit()
-@frappe.whitelist()
-
-# Following updated code creaded/updated by Pratik Pathak on 13/11/2024, To check server script working 
 @frappe.whitelist()
 def update_consumed_qty(doc, method=None):
     data = []
-    
-    # Loop through 'custom_actual_consumed_items' to get the consumed items
     if doc.supplied_items:
-        # First, collect items already present in 'custom_actual_consumed_items'
         for i in doc.custom_actual_consumed_items:
             data.append(i.item)
-
-        # Now, append new items with consumed quantities if not already in data
         for item in doc.supplied_items:
             if item.main_item_code not in data:
                 doc.append("custom_actual_consumed_items", {
                     "item": item.main_item_code,
-                    "actual_consumed_qty": round(item.consumed_qty, 3)  # Round the consumed qty to 3 decimal places
+                    "actual_consumed_qty": round(item.consumed_qty, 3)
                 })
-
-        # Commit the changes to save the new actual consumed items
         frappe.db.commit()
-
-        # Now update the supplied items with the actual consumed quantities
+    
         for i in doc.custom_actual_consumed_items:
             for item in doc.supplied_items:
                 if i.item == item.main_item_code:
-                    # Updating the consumed quantity to actual consumed quantity
                     item.consumed_qty = i.actual_consumed_qty
                     break
+    frappe.db.commit()
+# @frappe.whitelist()
+
+# # Following updated code creaded/updated by Pratik Pathak on 13/11/2024, To check server script working 
+# @frappe.whitelist()
+# def update_consumed_qty(doc, method=None):
+#     data = []
+    
+#     # Loop through 'custom_actual_consumed_items' to get the consumed items
+#     if doc.supplied_items:
+#         # First, collect items already present in 'custom_actual_consumed_items'
+#         for i in doc.custom_actual_consumed_items:
+#             data.append(i.item)
+
+#         # Now, append new items with consumed quantities if not already in data
+#         for item in doc.supplied_items:
+#             if item.main_item_code not in data:
+#                 doc.append("custom_actual_consumed_items", {
+#                     "item": item.main_item_code,
+#                     "actual_consumed_qty": round(item.consumed_qty, 3)  # Round the consumed qty to 3 decimal places
+#                 })
+
+#         # Commit the changes to save the new actual consumed items
+#         frappe.db.commit()
+
+#         # Now update the supplied items with the actual consumed quantities
+#         for i in doc.custom_actual_consumed_items:
+#             for item in doc.supplied_items:
+#                 if i.item == item.main_item_code:
+#                     # Updating the consumed quantity to actual consumed quantity
+#                     item.consumed_qty = i.actual_consumed_qty
+#                     break
         
-        # Commit after updating the consumed quantities
-        frappe.db.commit()
+#         # Commit after updating the consumed quantities
+#         frappe.db.commit()
 	
 @frappe.whitelist()
 def reset_password(email):
