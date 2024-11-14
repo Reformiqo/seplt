@@ -338,27 +338,27 @@ def validate(doc, method=None):
         set_document_reference(doc)
 
 # following code for update consumed qrt commented by pratik pathak on 13/11/2024
+# following update qty code commented by pratik pathak on 14/11/2024 for make this functonality from scripts    
+# @frappe.whitelist()
+# def update_consumed_qty(doc, method=None):
+#     data = []
+#     if doc.supplied_items:
+#         for i in doc.custom_actual_consumed_items:
+#             data.append(i.item)
+#         for item in doc.supplied_items:
+#             if item.main_item_code not in data:
+#                 doc.append("custom_actual_consumed_items", {
+#                     "item": item.main_item_code,
+#                     "actual_consumed_qty": round(item.consumed_qty, 3)
+#                 })
+#         frappe.db.commit()
     
-@frappe.whitelist()
-def update_consumed_qty(doc, method=None):
-    data = []
-    if doc.supplied_items:
-        for i in doc.custom_actual_consumed_items:
-            data.append(i.item)
-        for item in doc.supplied_items:
-            if item.main_item_code not in data:
-                doc.append("custom_actual_consumed_items", {
-                    "item": item.main_item_code,
-                    "actual_consumed_qty": round(item.consumed_qty, 3)
-                })
-        frappe.db.commit()
-    
-        for i in doc.custom_actual_consumed_items:
-            for item in doc.supplied_items:
-                if i.item == item.main_item_code:
-                    item.consumed_qty = i.actual_consumed_qty
-                    break
-    frappe.db.commit()
+#         for i in doc.custom_actual_consumed_items:
+#             for item in doc.supplied_items:
+#                 if i.item == item.main_item_code:
+#                     item.consumed_qty = i.actual_consumed_qty
+#                     break
+#     frappe.db.commit()
 # @frappe.whitelist()
 
 # # Following updated code creaded/updated by Pratik Pathak on 13/11/2024, To check server script working 
