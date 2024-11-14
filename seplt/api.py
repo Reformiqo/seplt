@@ -334,7 +334,8 @@ def on_submit(doc, method=None):
 @frappe.whitelist()
 def validate(doc, method=None):
     if doc.doctype == "Subcontracting Receipt":
-        update_consumed_qty(doc)
+	    # update_consumed_qty(doc)-> Pratik pathak commented(on 14/11) out this code because I am handling this functionality through the script
+        # update_consumed_qty(doc)
         set_document_reference(doc)
 
 # following code for update consumed qrt commented by pratik pathak on 13/11/2024
