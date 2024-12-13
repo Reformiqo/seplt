@@ -5,7 +5,7 @@ frappe.ui.form.on("PMC", {
     // sales_order: function(frm) {
     //     console.log("sales_order");
     //     frappe.call({
-    //         method: 'Seplt.api.get_sales_order_items',
+    //         method: 'seplt.api.get_sales_order_items',
     //         args: {
     //             sales_order: frm.doc.sales_order
     //         },
@@ -25,7 +25,7 @@ frappe.ui.form.on("PMC", {
         console.log("product_name");
         frappe.call({
 
-            method: 'Seplt.api.get_item_details',
+            method: 'seplt.api.get_item_details',
             args: {
                 item: frm.doc.product_name
             },
@@ -59,7 +59,7 @@ frappe.ui.form.on("Aluminium Slug", {
         console.log("raw_material_name");
         var d = locals[cdt][cdn];
         frappe.call({
-            method: 'Seplt.api.get_item_suppliers',
+            method: 'seplt.api.get_item_suppliers',
             args: {
                 item_code: d.raw_material_name
             },
@@ -82,7 +82,7 @@ frappe.ui.form.on("Lacquer Requirement", {
         console.log("raw_material_name");
         var d = locals[cdt][cdn];
         frappe.call({
-            method: 'Seplt.api.get_item_suppliers',
+            method: 'seplt.api.get_item_suppliers',
             args: {
                 item_code: d.raw_material_name
             },
@@ -105,7 +105,7 @@ frappe.ui.form.on("Coating Requirement", {
         console.log("raw_material_name");
         var d = locals[cdt][cdn];
         frappe.call({
-            method: 'Seplt.api.get_item_suppliers',
+            method: 'seplt.api.get_item_suppliers',
             args: {
                 item_code: d.raw_material_name
             },
@@ -128,7 +128,7 @@ frappe.ui.form.on("Printing Requirement ", {
         console.log("raw_material_name");
         var d = locals[cdt][cdn];
         frappe.call({
-            method: 'Seplt.api.get_item_suppliers',
+            method: 'seplt.api.get_item_suppliers',
             args: {
                 item_code: d.raw_material_name
             },
@@ -151,7 +151,7 @@ frappe.ui.form.on("Latex Requirement", {
         console.log("raw_material_name");
         var d = locals[cdt][cdn];
         frappe.call({
-            method: 'Seplt.api.get_item_suppliers',
+            method: 'seplt.api.get_item_suppliers',
             args: {
                 item_code: d.raw_material_name
             },
@@ -174,7 +174,7 @@ frappe.ui.form.on("Cap Requirement", {
         console.log("raw_material_name");
         var d = locals[cdt][cdn];
         frappe.call({
-            method: 'Seplt.api.get_item_suppliers',
+            method: 'seplt.api.get_item_suppliers',
             args: {
                 item_code: d.raw_material_name
             },
@@ -197,7 +197,7 @@ frappe.ui.form.on("Packaging Requirement", {
         console.log("raw_material_name");
         var d = locals[cdt][cdn];
         frappe.call({
-            method: 'Seplt.api.get_item_suppliers',
+            method: 'seplt.api.get_item_suppliers',
             args: {
                 item_code: d.raw_material_name
             },
@@ -220,7 +220,7 @@ frappe.ui.form.on("Outer Packaging Requirement", {
         console.log("raw_material_name");
         var d = locals[cdt][cdn];
         frappe.call({
-            method: 'Seplt.api.get_item_suppliers',
+            method: 'seplt.api.get_item_suppliers',
             args: {
                 item_code: d.raw_material_name
             },
