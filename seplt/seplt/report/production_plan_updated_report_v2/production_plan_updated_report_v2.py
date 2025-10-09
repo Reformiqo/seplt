@@ -138,11 +138,10 @@ def get_data(filters):
 
                 CONCAT('<a href="/app/work-order/', wo.name, '" target="_blank">', wo.name, '</a>') AS work_order_link,
 
-                wo.qty AS planned_qty,
-                wo.produced_qty AS produced_qty,
-                (wo.qty - wo.produced_qty) AS pending_qty,
-
-                COALESCE(wos.total_scrap_qty_per_wo, 0) AS scrap_qty,
+                ROUND(wo.qty,2) AS planned_qty,
+                ROUND(wo.produced_qty,2) AS produced_qty,
+                ROUND((wo.qty - wo.produced_qty),2) AS pending_qty,
+                ROUND(COALESCE(wos.total_scrap_qty_per_wo, 0),2) AS scrap_qty,
 
                 jc.name AS job_card,
                 wo.item_name AS production_item,
@@ -192,10 +191,10 @@ def get_data(filters):
             CASE WHEN is_total = 0 THEN wd.production_item ELSE NULL END AS "Production Item",
             CASE WHEN is_total = 0 THEN wd.item_code ELSE NULL END AS "Scrap Item",
 
-            SUM(wd.scrap_qty) AS "Scrap Qty",
-            SUM(wd.planned_qty) AS "Planned Qty",
-            SUM(wd.produced_qty) AS "Produced Qty",
-            SUM(wd.pending_qty) AS "Pending Qty"
+            ROUND(SUM(wd.scrap_qty),2) AS "Scrap Qty",
+            ROUND(SUM(wd.planned_qty),2) AS "Planned Qty",
+            ROUND(SUM(wd.produced_qty),2) AS "Produced Qty",
+            ROUND(SUM(wd.pending_qty),2) AS "Pending Qty"
 
         FROM work_order_data wd
 
