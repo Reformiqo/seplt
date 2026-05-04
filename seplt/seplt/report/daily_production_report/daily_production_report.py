@@ -79,21 +79,33 @@ def get_columns(filters=None):
 	]
 	return columns
 def get_datas(filters=None):
-	# stock_entry that has work ordr selected
-	stok_entry = frappe.get_all("Stock Entry", filters={"work_order": ["!=", ""]}, fields=["name"])
-	data = []
-	for entry in stok_entry:
-		se = frappe.get_doc("Stock Entry", entry.name)
-		for item in se.items:
-			data.append({
-				"date": se.posting_date,
-				"product_name": item.item_code,
-				"opration_name": frappe.db.get_value("Work Order", se.work_order, "transfer_material_against"),
-				"rm_batch_no": item.batch_no,
-				"production_quantity": item.qty,
-				"qty_rejected": 0,
-				"rej_": 0,
-				"final_product_batch_no": 0,
-				"lot_no": 0
-			})
-	return data
+	rows = frappe.db.sql(
+		"""
+		SELECT
+			se.posting_date,
+			sed.item_code,
+			wo.transfer_material_against,
+			sed.batch_no,
+			sed.qty
+		FROM `tabStock Entry Detail` sed
+		JOIN `tabStock Entry` se ON se.name = sed.parent
+		LEFT JOIN `tabWork Order` wo ON wo.name = se.work_order
+		WHERE se.work_order IS NOT NULL AND se.work_order != ''
+		ORDER BY se.posting_date DESC
+		""",
+		as_dict=True,
+	)
+	return [
+		{
+			"date": r.posting_date,
+			"product_name": r.item_code,
+			"opration_name": r.transfer_material_against,
+			"rm_batch_no": r.batch_no,
+			"production_quantity": r.qty,
+			"qty_rejected": 0,
+			"rej_": 0,
+			"final_product_batch_no": "",
+			"lot_no": "",
+		}
+		for r in rows
+	]

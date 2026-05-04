@@ -103,22 +103,35 @@ def get_datas(filters=None):
 		items = frappe.get_all("Item", filters={"item_group": "Aluminum slug"})
 		data = []
 		for item in items:
+			stock = flt(frappe.db.get_value("Bin", {"item_code": item.name}, "actual_qty"), 2)
+			pending_po = flt(get_pending_po(item.name), 2)
 			data.append({
 				"item": item.name,
-				"stock": frappe.db.get_value("Bin", {"item_code": item.name}, "actual_qty") or 0,
-				"pending_po": get_pending_po(item.name) or 0,
-				"total": flt(frappe.db.get_value("Bin", {"item_code": item.name}, "actual_qty"), 2) + flt(get_pending_po(item.name), 2) or 0,
-				"no_of_slug_per_kg": 3,
-				"pending_so": 4,
-				"slug_to_be_needed": 5,
-				"balance_slug": 6,
-				"tube_may_be_manufactured": 7,
+				"stock": stock,
+				"pending_po": pending_po,
+				"total": stock + pending_po,
+				"no_of_slug_per_kg": 0,
+				"pending_so": 0,
+				"slug_to_be_needed": 0,
+				"balance_slug": 0,
+				"tube_may_be_manufactured": 0,
 				"minimum_stock": frappe.db.get_value("Item", item.name, "min_order_qty") or 0,
-				"excess_less_stock": 9,
-				"slug_to_be_orderd": 10
+				"excess_less_stock": 0,
+				"slug_to_be_orderd": 0
 			})
 		return data
 def get_pending_po(item):
 		# get pending po for item where the parent is pending
-		po = frappe.db.sql(f"SELECT SUM(qty) FROM `tabPurchase Order Item` WHERE item_code='{item}' AND parent IN (SELECT name FROM `tabPurchase Order` WHERE status='To Receive and Bill')")
-		return po[0][0] or 0
+		po = frappe.db.sql(
+			"""
+			SELECT SUM(qty)
+			FROM `tabPurchase Order Item`
+			WHERE item_code = %s
+			  AND parent IN (
+			      SELECT name FROM `tabPurchase Order`
+			      WHERE status = 'To Receive and Bill'
+			  )
+			""",
+			(item,),
+		)
+		return (po[0][0] if po and po[0] else 0) or 0

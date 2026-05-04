@@ -2,7 +2,7 @@
 # For license information, please see license.txt
 
 import frappe
-from frappe.utils import flt, getdate, add_days, today, date_diff, cint
+from frappe.utils import flt, getdate, today, cint
 
 
 def execute(filters=None):
@@ -140,48 +140,60 @@ def get_columns():
 	]
 @frappe.whitelist()
 def get_sales_orders(filters=None):
-    # submitted saels sales_orders
+    # submitted sales orders only
     sales_orders = frappe.get_all("Sales Order", filters={"docstatus": 1})
     data = []
-    customers = []
     for so in sales_orders:
         so_doc = frappe.get_doc("Sales Order", so.name)
         days_left = cint((getdate(so_doc.delivery_date) - getdate(today())).days)
         customer_total_qty = 0
-        for item in so_doc.items:
-            customer_total_qty += float(float(item.qty) * 0.05) + float(item.qty)
+        items = list(so_doc.items)
+        for idx, item in enumerate(items):
+            qty = flt(item.qty)
+            excess = qty * 0.05 + qty
+            customer_total_qty += excess
+            is_last = idx == len(items) - 1
             data.append({
-                # only append the customer tota qty at the first item of the sales order
-                "customer_name": so_doc.customer if item == so_doc.items[0] else "",
+                "customer_name": so_doc.customer if idx == 0 else "",
                 "product_code": item.item_code,
                 "po_date": so_doc.transaction_date,
                 "delivery_date": so_doc.delivery_date,
                 "tube_size": frappe.db.get_value("Item", item.item_code, "custom_tube_dia"),
                 "lac_un": frappe.db.get_value("Item", item.item_code, "custom_lacquer_porosity"),
-                "slug_size": "sample-slug",
-                "latex": "sample-latex",
+                "slug_size": "",
+                "latex": "",
                 "product_name": item.item_name,
-                "tube_gms": "sample-tube-gms",
-                "po_qty": item.qty,
-                "excess_add_5": float(float(item.qty) * 0.05) + float(item.qty),
-                "customer_total_qty": customer_total_qty if item == so_doc.items[-1] else "",
-                "printed_qty": "sample-printed-qty",
-                "pending": "sample-pending",
-                "customer_total_balance": "sample-customer-total-balance",
-                "days_left": days_left if days_left > 0 else 0
-	
+                "tube_gms": "",
+                "po_qty": qty,
+                "excess_add_5": excess,
+                "customer_total_qty": customer_total_qty if is_last else "",
+                "printed_qty": "",
+                "pending": "",
+                "customer_total_balance": "",
+                "days_left": max(days_left, 0),
             })
-            customers.append(so_doc.customer) if so_doc.customer not in customers else ""
-        # clear the customers list
-        customers.clear()
     return data
 def get_total_po_quantity(supplier, item):
-    # fetch submitte sales orders only
-    po_qty = frappe.db.sql(f"SELECT SUM(qty) FROM `tabSales Order Item` WHERE parent IN (SELECT name FROM `tabSales Order` WHERE docstatus=1 AND customer='{supplier}') AND item_code='{item}'")
+    # fetch submitted sales orders only
+    po_qty = frappe.db.sql(
+        """
+        SELECT SUM(qty)
+        FROM `tabSales Order Item`
+        WHERE parent IN (
+            SELECT name FROM `tabSales Order`
+            WHERE docstatus = 1 AND customer = %s
+        )
+          AND item_code = %s
+        """,
+        (supplier, item),
+    )
     return po_qty[0][0] if po_qty else 0
 @frappe.whitelist()
 def get_so_items(so_name):
-    items = frappe.db.sql(f"SELECT item_code, qty, rate, amount FROM `tabSales Order Item` WHERE parent='{so_name}'")
+    items = frappe.db.sql(
+        "SELECT item_code, qty, rate, amount FROM `tabSales Order Item` WHERE parent = %s",
+        (so_name,),
+    )
     return items
 
 def get_data(filters=None):

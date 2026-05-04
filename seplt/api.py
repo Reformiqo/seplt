@@ -1,30 +1,28 @@
 import frappe
-from frappe.utils import flt
-from frappe import _
-from frappe.utils import today, getdate
-from frappe.utils import cint
+from frappe.utils import flt, cint
 
 
 @frappe.whitelist()
 def check_production_qc(work_order_id):
-    # Fetch Production QC records with the given work_order_id that are submitted
     work_order = frappe.get_doc("Work Order", work_order_id)
     item = work_order.production_item
-    pc = frappe.get_all("Production QC", {"reference_name": work_order_id, "item_code": item, "docstatus": 1}) 
-    
-    # If no Production QC is found, throw an error
+    pc = frappe.get_all(
+        "Production QC",
+        {"reference_name": work_order_id, "item_code": item, "docstatus": 1},
+    )
+
     if not pc:
         frappe.throw("Production QC not created or submitted")
-    
-    # Return success if Production QC is found
+
     return {"status": "success"}
+
 
 @frappe.whitelist()
 def get_work_order_item(work_order_id):
-    # Fetch the work order item
     work_order = frappe.get_doc("Work Order", work_order_id)
     return work_order.production_item
-# in pmc if item is set ge thte tiem detail
+
+
 @frappe.whitelist()
 def get_item_details(item):
     item_doc = frappe.get_doc("Item", item)
@@ -42,395 +40,379 @@ def get_item_details(item):
         "knurling_dia": item_doc.custom_knurling_dia,
         "thread_height": item_doc.custom_thread_height,
     }
+
+
 @frappe.whitelist()
 def get_so_item(item, so):
-	so = frappe.get_doc("Sales Order", so)
-	for i in so.items:
-		if i.item_code == item:
-			return i.qty
-	return None
+    so = frappe.get_doc("Sales Order", so)
+    for i in so.items:
+        if i.item_code == item:
+            return i.qty
+    return None
+
 
 @frappe.whitelist()
 def get_item_tube(item):
     return frappe.db.get_value("Item", item, "custom_tube_dia")
+
+
 @frappe.whitelist()
 def get_sales_order_items(sales_order):
-    so = frappe.get_doc("Sales Order", sales_order)
-    data = []
-    for item in so.items:
-        data.append(item.item_code)
-    return data
+    return [
+        row.item_code
+        for row in frappe.get_all(
+            "Sales Order Item",
+            filters={"parent": sales_order},
+            fields=["item_code"],
+        )
+    ]
+
 
 @frappe.whitelist()
 def get_total_po_quantity(supplier, item):
-    po_qty = frappe.db.sql(f"SELECT SUM(qty) FROM `tabPurchase Order Item` WHERE item_code='{item}' AND parent IN (SELECT name FROM `tabPurchase Order` WHERE supplier='{supplier}')")
-    return po_qty
+    return frappe.db.sql(
+        """
+        SELECT SUM(qty)
+        FROM `tabPurchase Order Item`
+        WHERE item_code = %s
+          AND parent IN (
+              SELECT name FROM `tabPurchase Order` WHERE supplier = %s
+          )
+        """,
+        (item, supplier),
+    )
+
 
 @frappe.whitelist()
 def update_item_price(supplier, price_list, amount, valid_from):
     items = get_supplier_items(supplier, price_list)
-    prices = [] 
+    updated = []
     for item in items:
-        price = frappe.db.get_value("Item Price", {"item_code": item, "price_list": price_list}, "price_list_rate")
+        price = frappe.db.get_value(
+            "Item Price",
+            {"item_code": item, "price_list": price_list},
+            "price_list_rate",
+        )
         if price:
-            value = flt(price) + flt(amount)
-            frappe.db.set_value("Item Price", {"item_code": item, "price_list": price_list}, "price_list_rate", value)
-            frappe.db.set_value("Item Price", {"item_code": item, "price_list": price_list}, "valid_from", valid_from)
-            frappe.db.commit()
-    return prices
+            new_value = flt(price) + flt(amount)
+            frappe.db.set_value(
+                "Item Price",
+                {"item_code": item, "price_list": price_list},
+                {"price_list_rate": new_value, "valid_from": valid_from},
+            )
+            updated.append({"item_code": item, "price_list_rate": new_value})
+    return updated
+
+
 @frappe.whitelist()
 def get_supplier_items(supplier, price_list):
-    items = frappe.get_all("Item Price", filters={"price_list": price_list}, fields=["item_code"])
-    item_list = []
+    items = frappe.get_all(
+        "Item Price",
+        filters={"price_list": price_list},
+        fields=["item_code"],
+    )
+    if not items:
+        return []
 
-    for item in items:
-        suppliers = get_suppliers(item.item_code)
-        if supplier in suppliers:
-            item_list.append(item.item_code)
-        
-    return item_list
+    item_codes = [i.item_code for i in items]
+    defaults = frappe.get_all(
+        "Item Default",
+        filters={"parent": ["in", item_codes], "default_supplier": supplier},
+        fields=["parent"],
+    )
+    return [d.parent for d in defaults]
+
 
 @frappe.whitelist()
 def get_suppliers(item_code):
     item = frappe.get_doc("Item", item_code)
-    defaults =item.get('item_defaults')
     suppliers = []
-    if defaults:
-        for d in defaults:
-            if d.default_supplier:
-                suppliers.append(d.default_supplier)
+    for d in item.get("item_defaults") or []:
+        if d.default_supplier:
+            suppliers.append(d.default_supplier)
     return suppliers
 
-@frappe.whitelist()
+
 def create_checklist_transaction(doc, method=None):
-    # Create a new Checklist Transaction document    
     for item in doc.items:
-        item_checlist = frappe.db.get_value("Item", item.item_code, "custom_checklist")
-        if not item_checlist:
-            frappe.throw(f"No checklist found for Item {item.item_code}, please set a checklist for this Item")
-        else:
-            checklist = frappe.new_doc("Checklist Transaction")
-            checklist.total_qty = item.qty
-            if doc.doctype == "Purchase Receipt":
-                checklist.supplier_or_customer = frappe.db.get_value("Supplier", doc.supplier, "supplier_name")
-                checklist.purchase_date = doc.posting_date
-                checklist.lot_no = item.lot_no
-                checklist.box_no = item.custom_box_no
-                checklist.transaction_type = "Inward"
-            elif doc.doctype == "Delivery Note":
-                checklist.transaction_type = "Outward"
-                checklist.supplier_or_customer = frappe.db.get_value("Customer", doc.customer, "customer_name")
-            elif doc.doctype == "Subcontracting Receipt":
-                checklist.supplier_or_customer = frappe.db.get_value("Supplier", doc.supplier, "supplier_name")
-                checklist.transaction_type = "Subcontracting"
-                checklist.purchase_date = doc.posting_date
-                checklist.total_qty = item.custom_actual_consumed_qty
+        item_checklist = frappe.db.get_value("Item", item.item_code, "custom_checklist")
+        if not item_checklist:
+            frappe.throw(
+                f"No checklist found for Item {item.item_code}, please set a checklist for this Item"
+            )
 
-            checklist.product = item.item_code
-            checklist.custom_batch_no = item.batch_no
-            
-            
-            checklist.grb_nomrn_no_date = doc.name
-            #the reference will be what type of document is being referred to, eg sales invoice or delivery note etc
-            checklist.reference = doc.doctype
-            item_group = frappe.db.get_value("Item", item.item_code, "item_group")
+        checklist = frappe.new_doc("Checklist Transaction")
+        checklist.total_qty = item.qty
+        if doc.doctype == "Purchase Receipt":
+            checklist.supplier_or_customer = frappe.db.get_value(
+                "Supplier", doc.supplier, "supplier_name"
+            )
+            checklist.purchase_date = doc.posting_date
+            checklist.lot_no = item.lot_no
+            checklist.box_no = item.custom_box_no
+            checklist.transaction_type = "Inward"
+        elif doc.doctype == "Delivery Note":
+            checklist.transaction_type = "Outward"
+            checklist.supplier_or_customer = frappe.db.get_value(
+                "Customer", doc.customer, "customer_name"
+            )
+        elif doc.doctype == "Subcontracting Receipt":
+            checklist.supplier_or_customer = frappe.db.get_value(
+                "Supplier", doc.supplier, "supplier_name"
+            )
+            checklist.transaction_type = "Subcontracting"
+            checklist.purchase_date = doc.posting_date
+            checklist.total_qty = item.custom_actual_consumed_qty
 
-            for ch in get_item_checklist(item.item_code):
+        checklist.product = item.item_code
+        checklist.custom_batch_no = item.batch_no
+        checklist.grb_nomrn_no_date = doc.name
+        checklist.reference = doc.doctype
 
-                if item_checlist == "Raw Material" or item_checlist == "Packing Material":
-                    if doc.doctype == "Purchase Receipt" and ch.parameters == "Source & Grade":
-                        ch.specification = item.item_name
-                    if doc.doctype == "Purchase Receipt" and ch.parameters == "Received Lot No.":
-                        ch.observation = item.lot_no
+        item_group = frappe.db.get_value("Item", item.item_code, "item_group")
 
-                    if ch.parameters == "Material":
-                        ch.specification = item_group
-                if ch.parameters == "Received Lot No.":
-                    checklist.received_lot_no = ch.observation
-                elif ch.parameters == "Received Bags/ Cans (in No)":
-                    checklist.received_bags = ch.observation
-                else:
-                    checklist.append("checklist", {
+        for ch in get_item_checklist(item.item_code):
+            if item_checklist in ("Raw Material", "Packing Material"):
+                if doc.doctype == "Purchase Receipt" and ch.parameters == "Source & Grade":
+                    ch.specification = item.item_name
+                if doc.doctype == "Purchase Receipt" and ch.parameters == "Received Lot No.":
+                    ch.observation = item.lot_no
+                if ch.parameters == "Material":
+                    ch.specification = item_group
+
+            if ch.parameters == "Received Lot No.":
+                checklist.received_lot_no = ch.observation
+            elif ch.parameters == "Received Bags/ Cans (in No)":
+                checklist.received_bags = ch.observation
+            else:
+                checklist.append(
+                    "checklist",
+                    {
                         "parameters": ch.parameters,
                         "specification": ch.specification,
-                        "observation": ch.observation
-                    })
-                
-            checklist.save()
-            if doc.doctype == "Purchase Receipt":
-                frappe.db.set_value("Checklist Transaction", checklist.name, "custom_batch_no", item.custom_supplier_batch_no)
-            frappe.db.commit()
-    
+                        "observation": ch.observation,
+                    },
+                )
+
+        checklist.save()
+        if doc.doctype == "Purchase Receipt":
+            frappe.db.set_value(
+                "Checklist Transaction",
+                checklist.name,
+                "custom_batch_no",
+                item.custom_supplier_batch_no,
+            )
+
+
 @frappe.whitelist()
 def get_item_checklist(item_code):
     data = []
-    item_checlist = frappe.db.get_value("Item", item_code, "custom_checklist")
-    checklist = frappe.get_doc("Checklist", item_checlist)
+    item_checklist = frappe.db.get_value("Item", item_code, "custom_checklist")
+    if not item_checklist:
+        return data
+    checklist = frappe.get_doc("Checklist", item_checklist)
     for ch in checklist.checklist:
-        data.append(frappe._dict({
-            "parameters": ch.parameters,
-            "specification": ch.specification,
-            "observation": ch.observation
-        }))
+        data.append(
+            frappe._dict(
+                {
+                    "parameters": ch.parameters,
+                    "specification": ch.specification,
+                    "observation": ch.observation,
+                }
+            )
+        )
     return data
-@frappe.whitelist()
-def check_if_checklist_exists(doc, method=None):
-    pass
-    # Check if a checklist transaction already exists for this document and make all checklist transactions are submitted before the document is submitted
-    # docs = frappe.get_list("Checklist Transaction", filters={"grb_nomrn_no_date": doc.name, "reference": doc.doctype}, fields=["name", "docstatus"])
-    # if docs:
-    #     for d in docs:
-    #         if d.docstatus == 0:
-    #             frappe.throw("Please submit all checklist transactions before submitting this document")
+
 
 @frappe.whitelist()
 def get_item_suppliers(item_code):
     item = frappe.get_doc("Item", item_code)
-    data = []
-    if item.get('supplier_items'):
-        for i in item.supplier_items:
-            data.append(i.supplier)
-    else:
-       suppliers = frappe.get_list("Supplier", fields=["name"])
-       for s in suppliers:
-              data.append(s.name)
-    return data
+    if item.get("supplier_items"):
+        return [i.supplier for i in item.supplier_items]
+    return [s.name for s in frappe.get_list("Supplier", fields=["name"])]
 
-@frappe.whitelist()
+
 def set_si_qrcode(doc, method=None):
+    """Generate a QR code for the given doc and attach it via Frappe's file API."""
     import segno
-    img = segno.make_qr("Hello, World")
-    
-    # Define the file path
-    file_path = f"/home/frappe/frappe-bench/sites/seplt.frappe.cloud/public/files/{doc.name}.png"
-    
-    # Save the image to the file
-    img.save(file_path, scale=15)  
+    import io
 
-    # Read the image file from the system
-    with open(file_path, "rb") as file:
-        file_content = file.read()
+    qr_payload = doc.name
+    img = segno.make_qr(qr_payload)
 
+    buffer = io.BytesIO()
+    img.save(buffer, kind="png", scale=15)
+    buffer.seek(0)
 
-    # Create a new file document in Frappe
-    file_doc = frappe.get_doc({
-        "doctype": "File",
-        "file_name": f"{doc.name}.png",
-        "is_private": 0,  # 0 for public, 1 for private
-        "content": file_content,
-        
-    })
+    file_doc = frappe.get_doc(
+        {
+            "doctype": "File",
+            "file_name": f"{doc.name}.png",
+            "is_private": 0,
+            "content": buffer.getvalue(),
+            "attached_to_doctype": doc.doctype,
+            "attached_to_name": doc.name,
+        }
+    )
+    file_doc.insert(ignore_permissions=True)
 
-    file_doc.insert()
-    doc.custom_qr_image = file_doc.file_url
-    doc.save()
-    frappe.db.commit()
+    doc.db_set("custom_qr_image", file_doc.file_url)
     return file_doc.file_url
 
-@frappe.whitelist()
+
 def set_supplier_batch_no(doc, method=None):
-    # doc = frappe.get_doc("Purchase Receipt", "PR-24-00013")
-    if doc.reference_name:
-        ref_doc = frappe.get_doc("Purchase Receipt", doc.reference_name)
-        for item in ref_doc.items:
-            if item.item_code == doc.item:
-                doc.custom_supplier_batch_no = item.custom_supplier_batch_no
-                doc.custom_box_no = item.custom_box_no
-                doc.save()
-                frappe.db.commit()
-                break
-    
+    if not doc.reference_name:
+        return
+    ref_doc = frappe.get_doc("Purchase Receipt", doc.reference_name)
+    for item in ref_doc.items:
+        if item.item_code == doc.item:
+            doc.db_set("custom_supplier_batch_no", item.custom_supplier_batch_no)
+            doc.db_set("custom_box_no", item.custom_box_no)
+            break
+
+
 @frappe.whitelist()
 def get_sales_orders():
-    sales_orders = frappe.get_all("Sales Order")
+    sales_orders = frappe.get_all("Sales Order", fields=["name", "customer", "delivery_date", "transaction_date"])
     data = []
-    customers = []
     for so in sales_orders:
-        so_doc = frappe.get_doc("Sales Order", so.name)
-        for item in so_doc.items:
-            data.append({
-                "so_name": so.name,
-                "customer": so_doc.customer if so_doc.customer not in customers else "",
-                "product_code": item.item_code,
-                "delivery_date": so_doc.delivery_date,
-                "po_date": so_doc.transaction_date,
-                "tube_size": frappe.db.get_value("Item", item.item_code, "custom_tube_dia"),
-                "lac_un": frappe.db.get_value("Item", item.item_code, "custom_lacquer_porosity"),
-                "slug": "sample-slug"
-            })
-            customers.append(so_doc.customer) if so_doc.customer not in customers else ""
-        # clear the customers list
-        customers.clear()
+        items = frappe.get_all(
+            "Sales Order Item",
+            filters={"parent": so.name},
+            fields=["item_code"],
+        )
+        for idx, item in enumerate(items):
+            data.append(
+                {
+                    "so_name": so.name,
+                    "customer": so.customer if idx == 0 else "",
+                    "product_code": item.item_code,
+                    "delivery_date": so.delivery_date,
+                    "po_date": so.transaction_date,
+                    "tube_size": frappe.db.get_value("Item", item.item_code, "custom_tube_dia"),
+                    "lac_un": frappe.db.get_value("Item", item.item_code, "custom_lacquer_porosity"),
+                    "slug": "sample-slug",
+                }
+            )
     return data
+
+
 @frappe.whitelist()
 def get_so_items(so_name):
-    items = frappe.db.sql(f"SELECT item_code, qty, rate, amount FROM `tabSales Order Item` WHERE parent='{so_name}'")
-    return items
+    return frappe.db.sql(
+        "SELECT item_code, qty, rate, amount FROM `tabSales Order Item` WHERE parent = %s",
+        (so_name,),
+    )
+
 
 @frappe.whitelist()
 def add_days(date, days):
     return frappe.utils.add_days(date, cint(days))
 
+
 @frappe.whitelist()
 def get_total_qty(item_code):
-    qty = frappe.db.sql(f"""
+    qty = frappe.db.sql(
+        """
         SELECT SUM(sed.qty)
         FROM `tabStock Entry Detail` sed
         JOIN `tabStock Entry` se ON se.name = sed.parent
-        WHERE sed.item_code = %s AND se.stock_entry_type = 'Material Transfer for Manufacture'
-    """, (item_code,))
-    
-    return qty[0][0] if qty else 0
+        WHERE sed.item_code = %s
+          AND se.stock_entry_type = 'Material Transfer for Manufacture'
+        """,
+        (item_code,),
+    )
+    return qty[0][0] if qty and qty[0][0] is not None else 0
+
 
 @frappe.whitelist()
 def get_transporter(doc):
-    transporter = frappe.db.sql(f"""
-                          SELECT custom_transporter, custom_transporter_name, custom_vehicle_no, custom_transport_receipt_no,  custom_transport_receipt_date,
-                                custom_distance_in_km, custom_mode_of_transport, custom_gst_vehicle_type
-                                FROM `tabPurchase Order` WHERE name = '{doc}'
-                          """)
-    
-    data = {
-        "transporter": transporter[0][0],
-        "transporter_name": transporter[0][1],
-        "vehicle_no": transporter[0][2],
-        "transport_receipt_no": transporter[0][3],
-        "transport_receipt_date": transporter[0][4],
-        "distance_in_km": transporter[0][5],
-        "mode_of_transport": transporter[0][6],
-        "gst_vehicle_type": transporter[0][7]
-        
+    transporter = frappe.db.sql(
+        """
+        SELECT custom_transporter, custom_transporter_name, custom_vehicle_no,
+               custom_transport_receipt_no, custom_transport_receipt_date,
+               custom_distance_in_km, custom_mode_of_transport, custom_gst_vehicle_type
+        FROM `tabPurchase Order`
+        WHERE name = %s
+        """,
+        (doc,),
+    )
 
+    if not transporter:
+        return {}
 
+    row = transporter[0]
+    return {
+        "transporter": row[0],
+        "transporter_name": row[1],
+        "vehicle_no": row[2],
+        "transport_receipt_no": row[3],
+        "transport_receipt_date": row[4],
+        "distance_in_km": row[5],
+        "mode_of_transport": row[6],
+        "gst_vehicle_type": row[7],
     }
-    return data
 
-# @frappe.whitelist()
-# def create_batch_on_submit(doc, method=None):
-#     for item in doc.items:
-#         if not frappe.db.exists("Batch", item.custom_supplier_batch_no):
-#             batch = frappe.new_doc("Batch")
-#             batch.batch_id = item.custom_supplier_batch_no
-#             batch.batch_no = item.custom_supplier_batch_no
-#             batch.item = item.item_code
-#             batch.manufacturing_date = doc.posting_date
-#             batch.custom_supplier_batch_no = item.custom_supplier_batch_no
-#             batch.custom_box_no = item.custom_box_no
-#             batch.custom_lot_no = item.lot_no
-#             batch.batch_qty = item.qty
-#             batch.save()
-#             frappe.db.commit()
 
-@frappe.whitelist()
 def after_insert(doc, method=None):
-    # if doc.doctype == "Purchase Receipt":
-    #     create_batch_on_submit(doc)
     create_checklist_transaction(doc)
-@frappe.whitelist()
-def on_submit(doc, method=None):
-    if doc.doctype == "Purchase Receipt":
-        check_if_checklist_exists(doc)
 
-@frappe.whitelist()
+
+def on_submit(doc, method=None):
+    # Hook reserved for Purchase Receipt submission checks.
+    pass
+
+
 def validate(doc, method=None):
     if doc.doctype == "Subcontracting Receipt":
-	    # update_consumed_qty(doc)-> Pratik pathak commented(on 14/11) out this code because I am handling this functionality through the script
-        # update_consumed_qty(doc)
         set_document_reference(doc)
 
-# following code for update consumed qrt commented by pratik pathak on 13/11/2024
-# following update qty code commented by pratik pathak on 14/11/2024 for make this functonality from scripts    
-# @frappe.whitelist()
-# def update_consumed_qty(doc, method=None):
-#     data = []
-#     if doc.supplied_items:
-#         for i in doc.custom_actual_consumed_items:
-#             data.append(i.item)
-#         for item in doc.supplied_items:
-#             if item.main_item_code not in data:
-#                 doc.append("custom_actual_consumed_items", {
-#                     "item": item.main_item_code,
-#                     "actual_consumed_qty": round(item.consumed_qty, 3)
-#                 })
-#         frappe.db.commit()
-    
-#         for i in doc.custom_actual_consumed_items:
-#             for item in doc.supplied_items:
-#                 if i.item == item.main_item_code:
-#                     item.consumed_qty = i.actual_consumed_qty
-#                     break
-#     frappe.db.commit()
-# @frappe.whitelist()
 
-# # Following updated code creaded/updated by Pratik Pathak on 13/11/2024, To check server script working 
-# @frappe.whitelist()
-# def update_consumed_qty(doc, method=None):
-#     data = []
-    
-#     # Loop through 'custom_actual_consumed_items' to get the consumed items
-#     if doc.supplied_items:
-#         # First, collect items already present in 'custom_actual_consumed_items'
-#         for i in doc.custom_actual_consumed_items:
-#             data.append(i.item)
-
-#         # Now, append new items with consumed quantities if not already in data
-#         for item in doc.supplied_items:
-#             if item.main_item_code not in data:
-#                 doc.append("custom_actual_consumed_items", {
-#                     "item": item.main_item_code,
-#                     "actual_consumed_qty": round(item.consumed_qty, 3)  # Round the consumed qty to 3 decimal places
-#                 })
-
-#         # Commit the changes to save the new actual consumed items
-#         frappe.db.commit()
-
-#         # Now update the supplied items with the actual consumed quantities
-#         for i in doc.custom_actual_consumed_items:
-#             for item in doc.supplied_items:
-#                 if i.item == item.main_item_code:
-#                     # Updating the consumed quantity to actual consumed quantity
-#                     item.consumed_qty = i.actual_consumed_qty
-#                     break
-        
-#         # Commit after updating the consumed quantities
-#         frappe.db.commit()
-	
 @frappe.whitelist()
 def reset_password(email):
-    user = frappe.get_doc('User', email)
+    if "System Manager" not in frappe.get_roles(frappe.session.user):
+        frappe.throw("Not permitted", frappe.PermissionError)
+    user = frappe.get_doc("User", email)
     return user.reset_password(send_email=True, password_expired=True)
 
-@frappe.whitelist()
+
 def set_document_reference(doc, method=None):
-    if doc.custom_document_reference:
-        doc.doc_references = []
-        for ref in doc.custom_document_reference:
-            doc.append("doc_references", {
-                "link_doctype": ref.link_doctype,
-                "link_name": ref.link_name
-        })
-        frappe.db.commit()
-        
+    if not doc.get("custom_document_reference"):
+        return
+    doc.doc_references = []
+    for ref in doc.custom_document_reference:
+        doc.append(
+            "doc_references",
+            {"link_doctype": ref.link_doctype, "link_name": ref.link_name},
+        )
+
+
 @frappe.whitelist()
 def submit_scr(doc):
-    doc = frappe.get_doc("Subcontracting Receipt", doc)
-    doc.submit()
-    frappe.db.commit()
+    frappe.has_permission("Subcontracting Receipt", "submit", doc=doc, throw=True)
+    scr = frappe.get_doc("Subcontracting Receipt", doc)
+    scr.submit()
     return "success"
+
+
 @frappe.whitelist()
 def submit_scr_v2(doc):
+    frappe.has_permission("Subcontracting Receipt", "submit", doc=doc, throw=True)
     try:
-        doc = frappe.get_doc("Subcontracting Receipt", doc)
-        doc.submit()
-        frappe.db.commit()
-        return "success"
-    except Exception as e:
-        frappe.log_error(frappe.get_traceback(), f"Error submitting Subcontracting Receipt {doc}")
+        scr = frappe.get_doc("Subcontracting Receipt", doc)
+        scr.submit()
+        return {"status": "success"}
+    except Exception:
+        frappe.log_error(
+            frappe.get_traceback(),
+            f"Error submitting Subcontracting Receipt {doc}",
+        )
+        return {"status": "error", "message": "Failed to submit Subcontracting Receipt"}
+
 
 @frappe.whitelist()
 def get_receipt_details(doc):
     doc = frappe.get_doc("Subcontracting Receipt", doc)
-    
     return {
         "lot_no": doc.custom_lot_no,
         "challan_no": doc.custom_challan_no,

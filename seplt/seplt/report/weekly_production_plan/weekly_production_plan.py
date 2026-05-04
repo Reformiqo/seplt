@@ -92,9 +92,10 @@ def get_data(filters):
 	data = []
 	wpp = frappe.get_all("Weekly Production Plan", filters=filters, fields=["*"])
 	for w in wpp:
-		planned = float(float(get_sales_order_item(w.item_name, w.sales_order)) * 0.05) + float(get_sales_order_item(w.item_name, w.sales_order)) or 0
-		printed = get_total_qty(w.item_name) or 0
-		over_excess_production = float(printed) - float(planned)
+		so_qty = float(get_sales_order_item(w.item_name, w.sales_order) or 0)
+		planned = so_qty * 0.05 + so_qty
+		printed = float(get_total_qty(w.item_name) or 0)
+		over_excess_production = printed - planned
 		data.append({
 			"line": w.line,
 			"item_name": w.item_name,
@@ -118,11 +119,14 @@ def get_sales_order_item(item_code, so):
 
 @frappe.whitelist()
 def get_total_qty(item_code):
-    qty = frappe.db.sql(f"""
+    qty = frappe.db.sql(
+        """
         SELECT SUM(sed.qty)
         FROM `tabStock Entry Detail` sed
         JOIN `tabStock Entry` se ON se.name = sed.parent
-        WHERE sed.item_code = %s AND se.stock_entry_type = 'Material Transfer for Manufacture'
-    """, (item_code,))
-    
-    return qty[0][0] if qty else 0
+        WHERE sed.item_code = %s
+          AND se.stock_entry_type = 'Material Transfer for Manufacture'
+        """,
+        (item_code,),
+    )
+    return qty[0][0] if qty and qty[0][0] is not None else 0
