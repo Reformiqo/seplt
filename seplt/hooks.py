@@ -28,7 +28,10 @@ app_license = "mit"
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-# doctype_js = {"doctype" : "public/js/doctype.js"}
+doctype_js = {
+    "Stock Entry" : "public/js/stock_entry.js",
+    "Subcontracting Inward Order" : "public/js/subcontracting_inward_order.js"
+}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -114,9 +117,9 @@ app_license = "mit"
 # ---------------
 # Override standard doctype classes
 
-# override_doctype_class = {
-# 	"ToDo": "custom_app.overrides.CustomToDo"
-# }
+override_doctype_class = {
+	"Stock Entry": "seplt.overrides.stock_entry.CustomStockEntry"
+}
 
 # Document Events
 # ---------------
@@ -129,6 +132,12 @@ app_license = "mit"
 # 		"on_trash": "method"
 # 	}
 # }
+
+doc_events = {
+	"Subcontracting Inward Order": {
+		"on_submit": "seplt.overrides.subcontracting_inward_order.set_received_qty_on_submit"
+	}
+}
 
 # Scheduled Tasks
 # ---------------
@@ -234,5 +243,8 @@ fixtures = [
     {"doctype": "Custom Field",
     "filters": [["module" , "in" , ("Seplt" )]]
     },
-  
+    {
+        "doctype" : "Property Setter",
+        "filters": [["module" , "in" , ("Seplt" )]]
+    }
     ]
