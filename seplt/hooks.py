@@ -118,7 +118,8 @@ doctype_js = {
 # Override standard doctype classes
 
 override_doctype_class = {
-	"Stock Entry": "seplt.overrides.stock_entry.CustomStockEntry"
+	"Stock Entry": "seplt.overrides.stock_entry.CustomStockEntry",
+	"Work Order": "seplt.overrides.work_order.CustomWorkOrder"
 }
 
 # Document Events
