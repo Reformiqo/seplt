@@ -70,6 +70,10 @@ app_license = "mit"
 # before_install = "seplt.install.before_install"
 # after_install = "seplt.install.after_install"
 
+# Creates the Stock-Manager-only override checkbox used by the Manufacture
+# guards. Idempotent, so it is safe to run on every migrate.
+after_migrate = "seplt.seplt.validations.manufacture_guard.install"
+
 # Uninstallation
 # ------------
 
@@ -122,13 +126,16 @@ app_license = "mit"
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+# Guards against the two Manufacture defects found on 09-08-2026: entries that
+# produce stock while consuming nothing (410 entries, Rs 96.42 cr) and a line
+# total typed into the rate column (MAT-STE-40604, Rs 93.92 cr). Neither could
+# be corrected after the fact, so they are stopped at entry.
+doc_events = {
+	"Stock Entry": {
+		"validate": "seplt.seplt.validations.manufacture_guard.check_rate_sanity",
+		"before_submit": "seplt.seplt.validations.manufacture_guard.check_consumption",
+	},
+}
 
 # Scheduled Tasks
 # ---------------
