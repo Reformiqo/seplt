@@ -75,7 +75,13 @@ doctype_js = {
 
 # Creates the Stock-Manager-only override checkbox used by the Manufacture
 # guards. Idempotent, so it is safe to run on every migrate.
-after_migrate = "seplt.seplt.validations.manufacture_guard.install"
+#
+# NOTE: a list, not a string — add new entries here rather than writing a
+# second `after_migrate = ...`, which would silently replace this one.
+after_migrate = [
+	"seplt.seplt.validations.manufacture_guard.install",
+	"seplt.seplt.report.job_card_summary_multi_workstation.job_card_summary_multi_workstation.install",
+]
 
 # Uninstallation
 # ------------
