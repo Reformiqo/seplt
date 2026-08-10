@@ -8,7 +8,7 @@ frappe.ui.form.on("Purchase Receipt", {
     frappe.call({
         method: "seplt.api.get_transporter",
         args: {
-            doc: rm.doc.subcontracting_receipt
+            doc: frm.doc.subcontracting_receipt
         },
         callback: function(r) {
             console.log(r.message);

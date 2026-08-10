@@ -63,7 +63,11 @@ def get_sales_order_items(sales_order):
 
 @frappe.whitelist()
 def get_total_po_quantity(supplier, item):
-    po_qty = frappe.db.sql(f"SELECT SUM(qty) FROM `tabPurchase Order Item` WHERE item_code='{item}' AND parent IN (SELECT name FROM `tabPurchase Order` WHERE supplier='{supplier}')")
+    po_qty = frappe.db.sql(
+        "SELECT SUM(qty) FROM `tabPurchase Order Item` WHERE item_code=%s "
+        "AND parent IN (SELECT name FROM `tabPurchase Order` WHERE supplier=%s)",
+        (item, supplier),
+    )
     return po_qty
 
 @frappe.whitelist()
@@ -264,7 +268,10 @@ def get_sales_orders():
     return data
 @frappe.whitelist()
 def get_so_items(so_name):
-    items = frappe.db.sql(f"SELECT item_code, qty, rate, amount FROM `tabSales Order Item` WHERE parent='{so_name}'")
+    items = frappe.db.sql(
+        "SELECT item_code, qty, rate, amount FROM `tabSales Order Item` WHERE parent=%s",
+        (so_name,),
+    )
     return items
 
 @frappe.whitelist()
@@ -284,12 +291,15 @@ def get_total_qty(item_code):
 
 @frappe.whitelist()
 def get_transporter(doc):
-    transporter = frappe.db.sql(f"""
+    transporter = frappe.db.sql("""
                           SELECT custom_transporter, custom_transporter_name, custom_vehicle_no, custom_transport_receipt_no,  custom_transport_receipt_date,
                                 custom_distance_in_km, custom_mode_of_transport, custom_gst_vehicle_type
-                                FROM `tabPurchase Order` WHERE name = '{doc}'
-                          """)
-    
+                                FROM `tabPurchase Order` WHERE name = %s
+                          """, (doc,))
+
+    if not transporter:
+        frappe.throw(f"Purchase Order {doc} not found")
+
     data = {
         "transporter": transporter[0][0],
         "transporter_name": transporter[0][1],
