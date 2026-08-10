@@ -28,7 +28,10 @@ app_license = "mit"
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-# doctype_js = {"doctype" : "public/js/doctype.js"}
+doctype_js = {
+    "Stock Entry" : "public/js/stock_entry.js",
+    "Subcontracting Inward Order" : "public/js/subcontracting_inward_order.js"
+}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -118,9 +121,10 @@ after_migrate = "seplt.seplt.validations.manufacture_guard.install"
 # ---------------
 # Override standard doctype classes
 
-# override_doctype_class = {
-# 	"ToDo": "custom_app.overrides.CustomToDo"
-# }
+override_doctype_class = {
+	"Stock Entry": "seplt.overrides.stock_entry.CustomStockEntry",
+	"Work Order": "seplt.overrides.work_order.CustomWorkOrder"
+}
 
 # Document Events
 # ---------------
@@ -135,6 +139,12 @@ doc_events = {
 		"validate": "seplt.seplt.validations.manufacture_guard.check_rate_sanity",
 		"before_submit": "seplt.seplt.validations.manufacture_guard.check_consumption",
 	},
+}
+
+doc_events = {
+	"Subcontracting Inward Order": {
+		"on_submit": "seplt.overrides.subcontracting_inward_order.set_received_qty_on_submit"
+	}
 }
 
 # Scheduled Tasks
@@ -241,5 +251,8 @@ fixtures = [
     {"doctype": "Custom Field",
     "filters": [["module" , "in" , ("Seplt" )]]
     },
-  
+    {
+        "doctype" : "Property Setter",
+        "filters": [["module" , "in" , ("Seplt" )]]
+    }
     ]
