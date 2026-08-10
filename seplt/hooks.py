@@ -134,17 +134,18 @@ override_doctype_class = {
 # produce stock while consuming nothing (410 entries, Rs 96.42 cr) and a line
 # total typed into the rate column (MAT-STE-40604, Rs 93.92 cr). Neither could
 # be corrected after the fact, so they are stopped at entry.
+#
+# NOTE: keep every entry in this ONE dict. A second `doc_events = {...}`
+# assignment silently replaces the first — that is how the Stock Entry guards
+# below were disabled once already.
 doc_events = {
 	"Stock Entry": {
 		"validate": "seplt.seplt.validations.manufacture_guard.check_rate_sanity",
 		"before_submit": "seplt.seplt.validations.manufacture_guard.check_consumption",
 	},
-}
-
-doc_events = {
 	"Subcontracting Inward Order": {
 		"on_submit": "seplt.overrides.subcontracting_inward_order.set_received_qty_on_submit"
-	}
+	},
 }
 
 # Scheduled Tasks
