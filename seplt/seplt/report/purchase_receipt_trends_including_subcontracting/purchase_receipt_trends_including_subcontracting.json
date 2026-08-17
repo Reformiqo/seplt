@@ -31,6 +31,9 @@
   },
   {
    "role": "Accounts User"
+  },
+  {
+   "role": "Purchase Manager"
   }
  ],
  "timeout": 0
