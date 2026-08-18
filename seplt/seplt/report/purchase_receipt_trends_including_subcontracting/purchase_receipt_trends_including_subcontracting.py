@@ -38,16 +38,53 @@ and no ``item_group`` column, so:
 * qty          -> ``qty * conversion_factor``  (accepted qty in stock UOM;
                   ``Subcontracting Receipt Item`` carries ``qty`` +
                   ``conversion_factor`` instead of a stored ``stock_qty``)
-* amount       -> ``amount``.  ``Subcontracting Receipt`` has no ``currency`` /
-                  ``conversion_rate`` field and no tax table -- it is always
-                  booked in company currency -- so ``amount`` already *is* the
-                  base net amount, the same semantics as
-                  ``Purchase Receipt Item.base_net_amount``.
+* amount       -> see "Amount Basis" below.
 * item_group   -> resolved from ``tabItem`` (Purchase Receipt Item denormalises
                   it, Subcontracting Receipt Item does not).  Only the
                   subcontracting side is resolved this way; the purchase side
                   keeps its stored ``item_group`` so no quantity ever moves
                   between rows relative to the standard report.
+* project      -> ``Subcontracting Receipt Item.project``, falling back to
+                  the parent ``Subcontracting Receipt.project`` when the item
+                  row leaves it blank (FRD FB-09; Purchase Receipt Item is
+                  left as-is -- core already reads it directly and any
+                  fallback behaviour there is out of scope for this report).
+
+Amount Basis (SO1-I134 FRD, OP-01 / BR-03)
+-------------------------------------------
+``Subcontracting Receipt Item.rate`` is the full inward valuation rate --
+``rm_cost_per_qty + service_cost_per_qty + additional_cost_per_qty +
+secondary_items_cost_per_qty`` -- so ``amount`` (``qty * rate``) already
+includes SEPL's own raw material cost.  That is not what a Purchase Receipt's
+``base_net_amount`` represents, and summing it directly distorts the trend:
+the FRD's own live-data example shows one receipt at Rs. 8,000 for 2,50,000
+qty next to another at Rs. 12,00,000 for 4,00,000 qty, purely because raw
+material cost was loaded into one and not the other.
+
+The "Subcontracting Amount Basis" filter exposes both readings:
+
+* Job Work / Service Value (default) -- ``service_cost_per_qty * qty``, the
+  like-for-like equivalent of a Purchase Receipt net amount and the FRD's
+  recommended default.
+* Total Receipt Value -- ``amount``, the full inward stock valuation, for
+  users who want that figure instead.
+
+Receipt Type (SO1-I134 FRD, FR-02)
+-----------------------------------
+"All" (default) unions both doctypes, exactly as before.  "Purchase Receipt
+Only" / "Subcontracting Receipt Only" isolate one side so the two can be
+reconciled against each other (FRD TC-02/TC-03/TC-04) -- something the old
+``include_subcontracting`` checkbox could not do, since switching it off only
+ever produced the purchase-only view.
+
+Permission handling (SO1-I134 FRD, FR-15)
+--------------------------------------------
+This report reads Subcontracting Receipt through raw SQL, which bypasses
+Frappe's row-level permission framework entirely -- a user with no read
+access on Subcontracting Receipt would otherwise see its figures regardless.
+``resolve_doctypes`` checks report-level permission explicitly and drops the
+subcontracting side (falling back to Purchase Receipt alone, never an empty
+query) when it is missing, whatever Receipt Type was requested.
 
 One deliberate deviation
 ------------------------
@@ -63,7 +100,6 @@ subcontracting rows consistent with each other.  No figure is affected.
 
 import frappe
 from frappe import _
-from frappe.utils import cint
 
 from erpnext.controllers.trends import calculate_total_row, get_columns
 from erpnext.stock.report.purchase_receipt_trends.purchase_receipt_trends import get_chart_data
@@ -83,6 +119,22 @@ GROUP_BY_COLUMN = {"Item": "t2.item_code", "Supplier": "t1.supplier"}
 # the group-by row layout matches the standard report exactly.
 BASED_ON_OFFSET = {"Customer": 3, "Supplier": 3, "Item": 2}
 
+# FR-02: which parent doctypes "Receipt Type" unions. Whitelisted for the same
+# reason as GROUP_BY_COLUMN -- the value only ever selects a dict key, never
+# lands in SQL directly.
+RECEIPT_TYPE_DOCTYPES = {
+	"All": ["Purchase Receipt", "Subcontracting Receipt"],
+	"Purchase Receipt Only": ["Purchase Receipt"],
+	"Subcontracting Receipt Only": ["Subcontracting Receipt"],
+}
+
+# OP-01/BR-03/FR-09: how a subcontracting row's amount is read. Both sides are
+# `qty`-adjacent expressions on `sri`, never raw filter input.
+AMOUNT_BASIS_EXPR = {
+	"Job Work / Service Value": "sri.service_cost_per_qty * sri.qty",
+	"Total Receipt Value": "sri.amount",
+}
+
 # Every column is aliased: a UNION takes its column names from the first
 # SELECT, so an unaliased expression there would be unaddressable downstream.
 _PARENT_SOURCES = {
@@ -100,27 +152,32 @@ _PARENT_SOURCES = {
 	""",
 }
 
-_ITEM_SOURCES = {
-	"Purchase Receipt": """
-		select pri.parent as parent, pri.item_code as item_code,
-			ifnull(itm.item_name, pri.item_name) as item_name,
-			pri.item_group as item_group, pri.project as project,
-			pri.stock_qty as stock_qty, pri.base_net_amount as base_net_amount,
-			'Purchase Receipt' as source_doctype
-		from `tabPurchase Receipt Item` pri
-		left join `tabItem` itm on itm.name = pri.item_code
-	""",
-	"Subcontracting Receipt": """
+_PURCHASE_RECEIPT_ITEM_SOURCE = """
+	select pri.parent as parent, pri.item_code as item_code,
+		ifnull(itm.item_name, pri.item_name) as item_name,
+		pri.item_group as item_group, pri.project as project,
+		pri.stock_qty as stock_qty, pri.base_net_amount as base_net_amount,
+		'Purchase Receipt' as source_doctype
+	from `tabPurchase Receipt Item` pri
+	left join `tabItem` itm on itm.name = pri.item_code
+"""
+
+
+def _subcontracting_receipt_item_source(amount_basis):
+	"""FB-09: item-level project, falling back to the parent's when blank."""
+	amount_expr = AMOUNT_BASIS_EXPR[amount_basis]
+	return f"""
 		select sri.parent as parent, sri.item_code as item_code,
 			ifnull(itm.item_name, sri.item_name) as item_name,
-			itm.item_group as item_group, sri.project as project,
+			itm.item_group as item_group,
+			ifnull(nullif(sri.project, ''), scr.project) as project,
 			sri.qty * ifnull(sri.conversion_factor, 1) as stock_qty,
-			sri.amount as base_net_amount,
+			{amount_expr} as base_net_amount,
 			'Subcontracting Receipt' as source_doctype
 		from `tabSubcontracting Receipt Item` sri
 		left join `tabItem` itm on itm.name = sri.item_code
-	""",
-}
+		left join `tabSubcontracting Receipt` scr on scr.name = sri.parent
+	"""
 
 
 def execute(filters=None):
@@ -142,7 +199,9 @@ def get_data(filters, conditions):
 		if not group_by_column:
 			frappe.throw(_("Group By {0} is not supported").format(filters.get("group_by")))
 
-	parent_table, item_table = source_tables(include_subcontracting(filters))
+	doctypes = resolve_doctypes(filters)
+	amount_basis = resolve_amount_basis(filters)
+	parent_table, item_table = source_tables(doctypes, amount_basis)
 
 	year_start_date, year_end_date = frappe.get_cached_value(
 		"Fiscal Year", filters.get("fiscal_year"), ["year_start_date", "year_end_date"]
@@ -248,31 +307,47 @@ def build_query(conditions, parent_table, item_table, select, group_by):
 	)
 
 
-def source_tables(with_subcontracting):
+def source_tables(doctypes, amount_basis):
 	"""Return the ``t1`` (parent) and ``t2`` (item) derived tables.
 
 	``source_doctype`` is carried on both sides and joined on, so a Purchase
 	Receipt could never pick up a Subcontracting Receipt Item even if the two
 	naming series ever produced the same document name.
 	"""
-	doctypes = ["Purchase Receipt"]
-	if with_subcontracting:
-		doctypes.append("Subcontracting Receipt")
+	item_sources = {
+		"Purchase Receipt": _PURCHASE_RECEIPT_ITEM_SOURCE,
+		"Subcontracting Receipt": _subcontracting_receipt_item_source(amount_basis),
+	}
 
 	parent = " union all ".join(_PARENT_SOURCES[d] for d in doctypes)
-	item = " union all ".join(_ITEM_SOURCES[d] for d in doctypes)
+	item = " union all ".join(item_sources[d] for d in doctypes)
 
 	return f"({parent}) t1", f"({item}) t2"
 
 
-def include_subcontracting(filters):
-	"""Default to including subcontracting -- that is the point of the report.
+def resolve_doctypes(filters):
+	"""FR-02 (Receipt Type) narrowed by FR-15 (permission gating).
 
-	The checkbox exists so the output can be reconciled against the standard
-	"Purchase Receipt Trends" report.  Only an explicit falsy value switches the
-	union off; a missing or blank filter must not silently reintroduce SO1-I134.
+	A user without report-level read on Subcontracting Receipt must still get
+	a working, error-free report -- scoped to Purchase Receipt only, whatever
+	Receipt Type was requested. The union is never allowed to end up empty.
 	"""
-	value = filters.get("include_subcontracting")
-	if value is None or value == "":
-		return True
-	return bool(cint(value))
+	receipt_type = filters.get("receipt_type") or "All"
+	if receipt_type not in RECEIPT_TYPE_DOCTYPES:
+		frappe.throw(_("Receipt Type {0} is not supported").format(receipt_type))
+
+	doctypes = RECEIPT_TYPE_DOCTYPES[receipt_type]
+	if "Subcontracting Receipt" in doctypes and not frappe.has_permission(
+		"Subcontracting Receipt", "report"
+	):
+		doctypes = [d for d in doctypes if d != "Subcontracting Receipt"] or ["Purchase Receipt"]
+	return doctypes
+
+
+def resolve_amount_basis(filters):
+	"""OP-01/FR-09. Meaningless (and ignored) once Subcontracting Receipt is
+	excluded, since no subcontracting rows exist to apply it to."""
+	amount_basis = filters.get("sco_amount_basis") or "Job Work / Service Value"
+	if amount_basis not in AMOUNT_BASIS_EXPR:
+		frappe.throw(_("Subcontracting Amount Basis {0} is not supported").format(amount_basis))
+	return amount_basis

@@ -9,9 +9,16 @@ These tests run against the real data on this site rather than fixtures, which
 is the whole point -- the report has to reconcile against what SEPL actually
 booked.  Every expected number is recomputed independently in SQL, so the
 tests stay correct as the dataset grows.
+
+This module also covers the four FRD gaps closed after the report's initial
+merge (Reformiqo's own FRD, REF-SEPL-FRD-PRT-SCR-001): the Amount Basis
+default (OP-01/BR-03), the Receipt Type filter (FR-02), permission gating
+(FR-15) and the project fallback (FB-09).
 """
 
 from __future__ import annotations
+
+from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -24,6 +31,12 @@ from erpnext.stock.report.purchase_receipt_trends.purchase_receipt_trends import
 from seplt.seplt.report.purchase_receipt_trends_including_subcontracting.purchase_receipt_trends_including_subcontracting import (
 	execute,
 )
+
+AMOUNT_EXPR = {
+	"Job Work / Service Value": "sri.service_cost_per_qty * sri.qty",
+	"Total Receipt Value": "sri.amount",
+}
+
 
 def label(column):
 	"""'Total(Qty):Float:120' -> 'Total(Qty)'."""
@@ -90,17 +103,17 @@ class TestPurchaseReceiptTrendsIncludingSubcontracting(IntegrationTestCase):
 		values.update(overrides)
 		return frappe._dict(values)
 
-	def subcontracting_totals(self, from_date=None, to_date=None):
+	def subcontracting_totals(self, from_date=None, to_date=None, amount_basis="Job Work / Service Value"):
 		"""Qty and amount the report is expected to add, computed independently.
 
 		Mirrors the mapping documented on the report: `Subcontracting Receipt
-		Item` stores `qty` + `conversion_factor` instead of `stock_qty`, and
-		`amount` instead of `base_net_amount` (it has no currency field, so it
-		is always already in company currency).
+		Item` stores `qty` + `conversion_factor` instead of `stock_qty`, and its
+		amount depends on which Amount Basis is in play (OP-01/BR-03) -- it has
+		no currency field, so either reading is already in company currency.
 		"""
 		row = frappe.db.sql(
-			"""SELECT ifnull(sum(sri.qty * ifnull(sri.conversion_factor, 1)), 0),
-				ifnull(sum(sri.amount), 0)
+			f"""SELECT ifnull(sum(sri.qty * ifnull(sri.conversion_factor, 1)), 0),
+				ifnull(sum({AMOUNT_EXPR[amount_basis]}), 0)
 			FROM `tabSubcontracting Receipt` sr
 			JOIN `tabSubcontracting Receipt Item` sri ON sri.parent = sr.name
 			WHERE sr.docstatus = 1 AND sr.company = %s
@@ -139,13 +152,16 @@ class TestPurchaseReceiptTrendsIncludingSubcontracting(IntegrationTestCase):
 
 	# --- parity with the standard report ---------------------------------
 
-	def test_identical_to_standard_report_when_subcontracting_excluded(self):
-		"""Nothing but the union changed: switch it off and the output matches."""
+	def test_identical_to_standard_report_when_purchase_receipt_only(self):
+		"""Nothing but the union changed: ask for Purchase Receipt Only and the
+		output matches the standard report exactly (FRD TC-02)."""
 		for based_on in ("Item", "Item Group", "Supplier", "Supplier Group"):
 			with self.subTest(based_on=based_on):
 				filters = self.filters(based_on=based_on)
 				std_columns, std_data, _m1, _std_chart = execute_standard(filters.copy())
-				columns, data, _m2, _chart = execute(dict(filters, include_subcontracting=0))
+				columns, data, _m2, _chart = execute(
+					dict(filters, receipt_type="Purchase Receipt Only")
+				)
 
 				self.assertEqual(std_columns, columns)
 				self.assertEqual(canonical(std_data, based_on), canonical(data, based_on))
@@ -163,7 +179,7 @@ class TestPurchaseReceiptTrendsIncludingSubcontracting(IntegrationTestCase):
 
 		filters = self.filters(company=company[0][0])
 		_c1, std_data, _m1, _ch1 = execute_standard(filters.copy())
-		_c2, data, _m2, _ch2 = execute(dict(filters, include_subcontracting=1))
+		_c2, data, _m2, _ch2 = execute(dict(filters))
 
 		self.assertEqual(canonical(std_data, "Item"), canonical(data, "Item"))
 
@@ -176,7 +192,7 @@ class TestPurchaseReceiptTrendsIncludingSubcontracting(IntegrationTestCase):
 		)
 		self.assertTrue(ambiguous, "test prerequisite: need an item renamed mid-history")
 
-		_columns, data, _msg, _chart = execute(dict(self.filters(), include_subcontracting=1))
+		_columns, data, _msg, _chart = execute(dict(self.filters()))
 		checked = 0
 		for row in data:
 			if not row[0] or row[0] == "'Total'":
@@ -192,8 +208,8 @@ class TestPurchaseReceiptTrendsIncludingSubcontracting(IntegrationTestCase):
 	def test_totals_include_subcontracting(self):
 		sc_qty, sc_amount = self.subcontracting_totals()
 
-		_c1, without, _m1, _ch1 = execute(dict(self.filters(), include_subcontracting=0))
-		_c2, with_sc, _m2, _ch2 = execute(dict(self.filters(), include_subcontracting=1))
+		_c1, without, _m1, _ch1 = execute(dict(self.filters(), receipt_type="Purchase Receipt Only"))
+		_c2, with_sc, _m2, _ch2 = execute(dict(self.filters(), receipt_type="All"))
 
 		self.assertAlmostEqual(with_sc[-1][-2] - without[-1][-2], sc_qty, places=2)
 		self.assertAlmostEqual(with_sc[-1][-1] - without[-1][-1], sc_amount, places=2)
@@ -214,8 +230,8 @@ class TestPurchaseReceiptTrendsIncludingSubcontracting(IntegrationTestCase):
 		submitted_qty, _amount = self.subcontracting_totals()
 		self.assertGreater(everything, submitted_qty, "test prerequisite: drafts in this window")
 
-		_c1, without, _m1, _ch1 = execute(dict(self.filters(), include_subcontracting=0))
-		_c2, with_sc, _m2, _ch2 = execute(dict(self.filters(), include_subcontracting=1))
+		_c1, without, _m1, _ch1 = execute(dict(self.filters(), receipt_type="Purchase Receipt Only"))
+		_c2, with_sc, _m2, _ch2 = execute(dict(self.filters(), receipt_type="All"))
 		self.assertAlmostEqual(with_sc[-1][-2] - without[-1][-2], submitted_qty, places=2)
 
 	def test_subcontracted_only_item_gets_its_own_row(self):
@@ -248,13 +264,13 @@ class TestPurchaseReceiptTrendsIncludingSubcontracting(IntegrationTestCase):
 		_c1, std_data, _m1, _ch1 = execute_standard(self.filters())
 		self.assertNotIn(item_code, [row[0] for row in std_data])
 
-		_c2, data, _m2, _ch2 = execute(dict(self.filters(), include_subcontracting=1))
+		_c2, data, _m2, _ch2 = execute(dict(self.filters()))
 		self.assertIn(item_code, [row[0] for row in data])
 
 	def test_monthly_buckets_get_subcontracting(self):
 		"""Every month column, not just the grand total, picks the receipts up."""
-		columns, without, _m1, _ch1 = execute(dict(self.filters(), include_subcontracting=0))
-		_c2, with_sc, _m2, _ch2 = execute(dict(self.filters(), include_subcontracting=1))
+		columns, without, _m1, _ch1 = execute(dict(self.filters(), receipt_type="Purchase Receipt Only"))
+		_c2, with_sc, _m2, _ch2 = execute(dict(self.filters(), receipt_type="All"))
 
 		labels = [label(column) for column in columns]
 		months_checked = 0
@@ -283,8 +299,8 @@ class TestPurchaseReceiptTrendsIncludingSubcontracting(IntegrationTestCase):
 	def test_item_group_is_resolved_for_subcontracting_items(self):
 		"""`Subcontracting Receipt Item` has no item_group column; it comes from Item."""
 		row = frappe.db.sql(
-			"""SELECT itm.item_group,
-				sum(sri.qty * ifnull(sri.conversion_factor, 1)), sum(sri.amount)
+			f"""SELECT itm.item_group,
+				sum(sri.qty * ifnull(sri.conversion_factor, 1)), sum({AMOUNT_EXPR["Job Work / Service Value"]})
 			FROM `tabSubcontracting Receipt` sr
 			JOIN `tabSubcontracting Receipt Item` sri ON sri.parent = sr.name
 			JOIN `tabItem` itm ON itm.name = sri.item_code
@@ -298,8 +314,8 @@ class TestPurchaseReceiptTrendsIncludingSubcontracting(IntegrationTestCase):
 		item_group, sc_qty, sc_amount = row[0]
 
 		filters = self.filters(based_on="Item Group")
-		_c1, without, _m1, _ch1 = execute(dict(filters, include_subcontracting=0))
-		_c2, with_sc, _m2, _ch2 = execute(dict(filters, include_subcontracting=1))
+		_c1, without, _m1, _ch1 = execute(dict(filters, receipt_type="Purchase Receipt Only"))
+		_c2, with_sc, _m2, _ch2 = execute(dict(filters, receipt_type="All"))
 
 		def find(data):
 			for data_row in data:
@@ -318,7 +334,7 @@ class TestPurchaseReceiptTrendsIncludingSubcontracting(IntegrationTestCase):
 
 	def test_group_by_rows_reconcile_with_their_parent(self):
 		filters = self.filters(based_on="Item", group_by="Supplier")
-		columns, data, _msg, _chart = execute(dict(filters, include_subcontracting=1))
+		columns, data, _msg, _chart = execute(dict(filters))
 
 		# Item / Item Name / Currency / Supplier / <periods> / Total(Qty) / Total(Amt)
 		self.assertEqual(label(columns[3]), "Supplier")
@@ -352,8 +368,8 @@ class TestPurchaseReceiptTrendsIncludingSubcontracting(IntegrationTestCase):
 	def test_based_on_supplier_credits_the_subcontractor(self):
 		"""The subcontractor's own row has to grow by exactly its receipts."""
 		row = frappe.db.sql(
-			"""SELECT sr.supplier,
-				sum(sri.qty * ifnull(sri.conversion_factor, 1)), sum(sri.amount)
+			f"""SELECT sr.supplier,
+				sum(sri.qty * ifnull(sri.conversion_factor, 1)), sum({AMOUNT_EXPR["Job Work / Service Value"]})
 			FROM `tabSubcontracting Receipt` sr
 			JOIN `tabSubcontracting Receipt Item` sri ON sri.parent = sr.name
 			WHERE sr.docstatus = 1 AND sr.company = %s
@@ -366,8 +382,8 @@ class TestPurchaseReceiptTrendsIncludingSubcontracting(IntegrationTestCase):
 		supplier, sc_qty, sc_amount = row[0]
 
 		filters = self.filters(based_on="Supplier")
-		_c1, without, _m1, _ch1 = execute(dict(filters, include_subcontracting=0))
-		_c2, with_sc, _m2, _ch2 = execute(dict(filters, include_subcontracting=1))
+		_c1, without, _m1, _ch1 = execute(dict(filters, receipt_type="Purchase Receipt Only"))
+		_c2, with_sc, _m2, _ch2 = execute(dict(filters, receipt_type="All"))
 
 		def find(data):
 			for data_row in data:
@@ -390,7 +406,7 @@ class TestPurchaseReceiptTrendsIncludingSubcontracting(IntegrationTestCase):
 
 	def test_chart_keeps_the_standard_shape(self):
 		_c1, _d1, _m1, std_chart = execute_standard(self.filters())
-		_c2, data, _m2, chart = execute(dict(self.filters(), include_subcontracting=1))
+		_c2, data, _m2, chart = execute(dict(self.filters()))
 
 		self.assertEqual(std_chart["type"], chart["type"])
 		self.assertEqual(std_chart["colors"], chart["colors"])
@@ -411,18 +427,157 @@ class TestPurchaseReceiptTrendsIncludingSubcontracting(IntegrationTestCase):
 	def test_chart_moves_once_subcontracting_counts(self):
 		"""Based On = Item Group: few enough rows that the receipts reach the top 10."""
 		filters = self.filters(based_on="Item Group")
-		_c1, _d1, _m1, chart_without = execute(dict(filters, include_subcontracting=0))
-		_c2, _d2, _m2, chart_with = execute(dict(filters, include_subcontracting=1))
+		_c1, _d1, _m1, chart_without = execute(dict(filters, receipt_type="Purchase Receipt Only"))
+		_c2, _d2, _m2, chart_with = execute(dict(filters, receipt_type="All"))
 
 		self.assertNotEqual(chart_without["data"], chart_with["data"])
 
-	# --- defaults ---------------------------------------------------------
+	# --- defaults -----------------------------------------------------------
 
-	def test_subcontracting_is_included_by_default(self):
-		"""A missing or blank filter must not silently reintroduce the defect."""
-		_c0, explicit, _m0, _ch0 = execute(dict(self.filters(), include_subcontracting=1))
+	def test_all_receipt_types_is_the_default(self):
+		"""A missing or blank Receipt Type must not silently drop subcontracting data."""
+		_c0, explicit, _m0, _ch0 = execute(dict(self.filters(), receipt_type="All"))
 
-		for value in ({}, {"include_subcontracting": None}, {"include_subcontracting": ""}):
+		for value in ({}, {"receipt_type": None}, {"receipt_type": ""}):
 			with self.subTest(value=value):
 				_c1, data, _m1, _ch1 = execute(dict(self.filters(), **value))
 				self.assertEqual([list(r) for r in data], [list(r) for r in explicit])
+
+	def test_unsupported_receipt_type_is_rejected(self):
+		self.assertRaises(
+			frappe.ValidationError, execute, dict(self.filters(), receipt_type="Nonsense")
+		)
+
+	def test_unsupported_amount_basis_is_rejected(self):
+		self.assertRaises(
+			frappe.ValidationError, execute, dict(self.filters(), sco_amount_basis="Nonsense")
+		)
+
+	# --- OP-01 / FR-09: Amount Basis --------------------------------------
+
+	def test_amount_basis_defaults_to_job_work_service_value(self):
+		"""The FRD's recommended default (BR-03): `amount` bakes SEPL's own raw
+		material cost into subcontracting receipts, so the default report must
+		NOT simply sum it -- it must use service_cost_per_qty * qty instead."""
+		sc_qty, service_value = self.subcontracting_totals(amount_basis="Job Work / Service Value")
+		_qty2, total_receipt_value = self.subcontracting_totals(amount_basis="Total Receipt Value")
+		self.assertNotAlmostEqual(
+			service_value, total_receipt_value, places=2,
+			msg="test prerequisite: need raw material cost actually loaded into some receipts",
+		)
+
+		_c1, without, _m1, _ch1 = execute(dict(self.filters(), receipt_type="Purchase Receipt Only"))
+		_c2, default_run, _m2, _ch2 = execute(dict(self.filters()))
+
+		self.assertAlmostEqual(
+			default_run[-1][-1] - without[-1][-1], service_value, places=2
+		)
+		self.assertNotAlmostEqual(
+			default_run[-1][-1] - without[-1][-1], total_receipt_value, places=2
+		)
+
+	def test_amount_basis_total_receipt_value_option(self):
+		"""Switching the basis must change only the subcontracting amount."""
+		_qty, total_receipt_value = self.subcontracting_totals(amount_basis="Total Receipt Value")
+
+		_c1, without, _m1, _ch1 = execute(dict(self.filters(), receipt_type="Purchase Receipt Only"))
+		_c2, total_basis_run, _m2, _ch2 = execute(
+			dict(self.filters(), sco_amount_basis="Total Receipt Value")
+		)
+
+		self.assertAlmostEqual(
+			total_basis_run[-1][-1] - without[-1][-1], total_receipt_value, places=2
+		)
+		# purchase-side amount is untouched by the subcontracting-only setting
+		self.assertAlmostEqual(total_basis_run[-1][-2] - without[-1][-2], self.subcontracting_totals()[0], places=2)
+
+	# --- FR-02: Receipt Type -----------------------------------------------
+
+	def test_receipt_type_subcontracting_only_isolates(self):
+		"""FRD TC-03: only subcontracting rows appear, reconciling to the
+		Subcontracting Receipt data directly."""
+		sc_qty, sc_amount = self.subcontracting_totals()
+
+		_c1, purchase_data, _m1, _ch1 = execute(dict(self.filters(), receipt_type="Purchase Receipt Only"))
+		_c2, sc_data, _m2, _ch2 = execute(dict(self.filters(), receipt_type="Subcontracting Receipt Only"))
+
+		purchase_items = {row[0] for row in purchase_data if row[0] and row[0] != "'Total'"}
+		sc_items = {row[0] for row in sc_data if row[0] and row[0] != "'Total'"}
+		self.assertTrue(sc_items, "test prerequisite: expected at least one subcontracting-only row")
+		# a purchase-only item that never appears in a subcontracting receipt
+		# must be absent once Receipt Type excludes Purchase Receipt entirely
+		purchase_only_items = purchase_items - sc_items
+		if purchase_only_items:
+			self.assertNotIn(next(iter(purchase_only_items)), sc_items)
+
+		self.assertAlmostEqual(sc_data[-1][-2], sc_qty, places=2)
+		self.assertAlmostEqual(sc_data[-1][-1], sc_amount, places=2)
+
+	def test_receipt_type_additivity(self):
+		"""FRD TC-04: All total = Purchase Only total + Subcontracting Only total."""
+		filters = self.filters()
+		_c1, all_data, _m1, _ch1 = execute(dict(filters, receipt_type="All"))
+		_c2, purchase_data, _m2, _ch2 = execute(dict(filters, receipt_type="Purchase Receipt Only"))
+		_c3, sc_data, _m3, _ch3 = execute(dict(filters, receipt_type="Subcontracting Receipt Only"))
+
+		self.assertAlmostEqual(all_data[-1][-2], purchase_data[-1][-2] + sc_data[-1][-2], places=2)
+		self.assertAlmostEqual(all_data[-1][-1], purchase_data[-1][-1] + sc_data[-1][-1], places=2)
+
+	# --- FR-15: permission handling -----------------------------------------
+
+	def test_permission_denied_falls_back_to_purchase_receipt_only(self):
+		"""A user without report access on Subcontracting Receipt must still get
+		a working, error-free report scoped to Purchase Receipt only -- whatever
+		Receipt Type they asked for."""
+		_c1, expected, _m1, _ch1 = execute(dict(self.filters(), receipt_type="Purchase Receipt Only"))
+
+		def deny_subcontracting_receipt(doctype, ptype=None, *args, **kwargs):
+			return doctype != "Subcontracting Receipt"
+
+		with patch("frappe.has_permission", side_effect=deny_subcontracting_receipt):
+			for requested in ("All", "Subcontracting Receipt Only"):
+				with self.subTest(receipt_type=requested):
+					_c2, restricted, _m2, _ch2 = execute(dict(self.filters(), receipt_type=requested))
+					self.assertEqual([list(r) for r in restricted], [list(r) for r in expected])
+
+	def test_permission_granted_keeps_subcontracting(self):
+		"""Sanity check for the mock above: a positive permission still returns
+		subcontracting data, so the fallback in FR-15 is permission-driven and
+		not just always-on."""
+		with patch("frappe.has_permission", return_value=True):
+			_c1, data, _m1, _ch1 = execute(dict(self.filters(), receipt_type="All"))
+		sc_qty = self.subcontracting_totals()[0]
+		_c2, without, _m2, _ch2 = execute(dict(self.filters(), receipt_type="Purchase Receipt Only"))
+		self.assertAlmostEqual(data[-1][-2] - without[-1][-2], sc_qty, places=2)
+
+	# --- FB-09: project fallback --------------------------------------------
+
+	def test_project_falls_back_to_parent_when_item_level_blank(self):
+		row = frappe.db.sql(
+			"""SELECT sri.item_code, sr.project
+			FROM `tabSubcontracting Receipt` sr
+			JOIN `tabSubcontracting Receipt Item` sri ON sri.parent = sr.name
+			WHERE sr.docstatus = 1 AND sr.company = %s
+				AND sr.posting_date BETWEEN %s AND %s
+				AND ifnull(sri.project, '') = ''
+				AND ifnull(sr.project, '') != ''
+			LIMIT 1""",
+			(self.company, self.year_start_date, self.year_end_date),
+			as_list=True,
+		)
+		if not row:
+			self.skipTest(
+				"test prerequisite: need a Subcontracting Receipt with a blank item-level "
+				"project and a set parent-level project"
+			)
+		item_code, parent_project = row[0]
+
+		filters = self.filters(based_on="Project")
+		_c1, data, _m1, _ch1 = execute(dict(filters, receipt_type="Subcontracting Receipt Only"))
+
+		projects_seen = {r[0] for r in data if r[0] and r[0] != "'Total'"}
+		self.assertIn(
+			parent_project,
+			projects_seen,
+			"item-level project was blank and did not fall back to the parent's",
+		)
