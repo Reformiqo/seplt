@@ -81,7 +81,12 @@ doctype_js = {
 after_migrate = [
 	"seplt.seplt.validations.manufacture_guard.install",
 	"seplt.seplt.report.job_card_summary_multi_workstation.job_card_summary_multi_workstation.install",
+	# Guards the India Compliance monkeypatch below: fails the migrate if the
+	# functions it rebinds have moved, rather than silently reverting to
+	# India Compliance's stock validation.
+	"seplt.overrides.india_compliance_taxes.assert_patch_targets",
 ]
+
 
 # Uninstallation
 # ------------
@@ -146,8 +151,20 @@ override_doctype_class = {
 # below were disabled once already.
 doc_events = {
 	"Stock Entry": {
+		# Installs the India Compliance relaxation — see india_compliance_taxes.py.
+		# before_validate, because frappe runs that event for every app before it
+		# runs `validate` for any (frappe/model/document.py), so the patch is in
+		# place before India Compliance validates no matter what order the apps
+		# are installed in — here India Compliance is actually ahead of seplt.
+		"before_validate": "seplt.overrides.india_compliance_taxes.apply",
 		"validate": "seplt.seplt.validations.manufacture_guard.check_rate_sanity",
 		"before_submit": "seplt.seplt.validations.manufacture_guard.check_consumption",
+	},
+	"Subcontracting Order": {
+		"before_validate": "seplt.overrides.india_compliance_taxes.apply",
+	},
+	"Subcontracting Receipt": {
+		"before_validate": "seplt.overrides.india_compliance_taxes.apply",
 	},
 	"Subcontracting Inward Order": {
 		"on_submit": "seplt.overrides.subcontracting_inward_order.set_received_qty_on_submit"
