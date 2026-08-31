@@ -581,3 +581,55 @@ class TestPurchaseReceiptTrendsIncludingSubcontracting(IntegrationTestCase):
 			projects_seen,
 			"item-level project was blank and did not fall back to the parent's",
 		)
+
+	# --- chart / ERPNext version compatibility (SO1-I139) -----------------
+
+	def test_chart_dispatch_matches_installed_get_chart_data_signature(self):
+		"""SO1-I139: call whichever ``get_chart_data`` arity ERPNext exposes.
+
+		ERPNext's ``purchase_receipt_trends.get_chart_data`` is 2-arg
+		``(data, filters)`` on older benches (local dev runs 16.6.1) and 3-arg
+		``(data, conditions, filters)`` on the harmonised versions (cloud runs
+		16.32.3).  Calling ``(data, filters)`` against the 3-arg form passed
+		``filters`` in the ``conditions`` slot and raised
+		``TypeError: get_chart_data() missing 1 required positional argument:
+		'filters'`` -- the crash Raj reported from the desk.
+		"""
+		from seplt.seplt.report.purchase_receipt_trends_including_subcontracting import (
+			purchase_receipt_trends_including_subcontracting as report,
+		)
+
+		filters = frappe._dict(self.filters())
+		conditions = report.get_columns(filters, report.TRANS)
+		data = report.get_data(filters, conditions)
+
+		# Cloud 16.32.3: 3-arg -- conditions dict must be forwarded, not filters.
+		seen = {}
+
+		def cloud_3arg(data, conditions, filters):
+			seen["conditions"] = conditions
+			return {"labels": [], "datasets": []}
+
+		with patch.object(report, "get_chart_data", cloud_3arg):
+			chart = report._build_chart(data, conditions, filters)
+		self.assertIs(
+			seen["conditions"],
+			conditions,
+			"the get_columns() dict must be passed as the 2nd positional arg on 3-arg ERPNext",
+		)
+		self.assertIsInstance(chart, dict)
+
+		# Local 16.6.x: 2-arg -- must still work.
+		def old_2arg(data, filters):
+			return {"labels": [], "datasets": []}
+
+		with patch.object(report, "get_chart_data", old_2arg):
+			self.assertIsInstance(report._build_chart(data, conditions, filters), dict)
+
+		# The old, unconditional 2-arg call would have raised against cloud_3arg.
+		with patch.object(report, "get_chart_data", cloud_3arg):
+			with self.assertRaises(TypeError):
+				report.get_chart_data(data, filters)
+
+		# End to end: the report itself must run without raising.
+		execute(dict(self.filters()))
