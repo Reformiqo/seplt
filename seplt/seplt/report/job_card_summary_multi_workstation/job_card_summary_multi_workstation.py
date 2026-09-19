@@ -53,11 +53,33 @@ nothing.
 Empty / absent Workstation is untouched: the key is removed, core's
 ``if filters.get(field)`` is False, and no workstation condition is added --
 byte-identical behaviour to today.
+
+Rej % column -- SO1-I137
+-------------------------
+Raj asked for a row-wise "Rej %" column, ``Process Loss Qty / Qty To
+Manufacture x 100``, placed right after "Process Loss Qty".
+
+"Qty To Manufacture" and "Process Loss Qty" are themselves not script columns
+-- neither core's ``get_columns`` above nor this module's ``execute`` returns
+them.  They are Job Card fields Raj picked from the report's "Add Column"
+menu, and Frappe fetches them straight from ``tabJob Card`` by the row's
+``name`` (each one's saved column entry carries ``"doctype": "Job Card"`` and
+``"link_field": {"fieldname": "name", ...}`` -- confirmed by reading the
+saved ``Report.json`` directly). A computed value can be added the same way
+only if it is a real field for Frappe to fetch, so "Rej %" is a Job Card
+custom field (``custom_rej_percent``), kept in sync on every save, backfilled
+once for existing Job Cards, and inserted into the saved view's column list
+right after "Process Loss Qty" -- all from ``install_rej_percent`` below.
+
+No repost, no change to any of the 13 existing columns; this only adds one.
 """
 
 from __future__ import annotations
 
+import json
+
 import frappe
+from frappe.utils import flt
 
 from erpnext.manufacturing.report.job_card_summary.job_card_summary import execute as core_execute
 
@@ -164,3 +186,136 @@ def install():
 	frappe.db.set_value("Report", CUSTOM_REPORT, "reference_report", THIS_REPORT)
 	frappe.clear_document_cache("Report", CUSTOM_REPORT)
 	print(f"seplt: {CUSTOM_REPORT} re-pointed to {THIS_REPORT} (SO1-I133)")
+
+
+# ---------------------------------------------------------------------------
+# Rej % column -- SO1-I137
+# ---------------------------------------------------------------------------
+
+REJ_PERCENT_FIELD = "custom_rej_percent"
+REJ_PERCENT_LABEL = "Rej %"
+# The saved column this one is inserted after. Must already exist in the
+# saved view's column list, or there is nowhere sane to insert.
+INSERT_AFTER_FIELD = "process_loss_qty"
+
+
+def compute_rej_percent(process_loss_qty, for_quantity) -> float:
+	"""Rej % = Process Loss Qty / Qty To Manufacture x 100, row-wise.
+
+	SO1-I137 is explicit that this must use Qty To Manufacture (Job Card's
+	``for_quantity``) and never Total Completed Qty, and that a Qty To
+	Manufacture of 0 must show 0% rather than raise. Rounded to 2 decimal
+	places -- the field's own ``precision`` formats display, but the stored
+	value should not carry false extra precision either.
+	"""
+	for_quantity = flt(for_quantity)
+	if not for_quantity:
+		return 0.0
+	return flt(flt(process_loss_qty) / for_quantity * 100, 2)
+
+
+def set_rej_percent(doc, method=None):
+	"""Job Card ``validate`` hook: keep ``custom_rej_percent`` current on every save."""
+	doc.custom_rej_percent = compute_rej_percent(doc.process_loss_qty, doc.for_quantity)
+
+
+def install_rej_percent():
+	"""Add the Rej % field, backfill existing Job Cards, and add the column
+	to "JOB CARD SUMMARY V2".
+
+	Runs from ``after_migrate`` alongside ``install()`` above. Idempotent and
+	safe to run on every migrate: `create_custom_fields` is itself idempotent,
+	the backfill is a plain recompute (running it twice gives the same
+	answer), and the column insert checks for its own fieldname first.
+	"""
+	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+
+	create_custom_fields(
+		{
+			"Job Card": [
+				{
+					"fieldname": REJ_PERCENT_FIELD,
+					"label": REJ_PERCENT_LABEL,
+					"fieldtype": "Percent",
+					"insert_after": INSERT_AFTER_FIELD,
+					"precision": "2",
+					"read_only": 1,
+					"description": (
+						"Process Loss Qty / Qty To Manufacture x 100. Row-wise; "
+						"0% when Qty To Manufacture is 0. Kept in sync automatically."
+					),
+					"module": "Seplt",
+				}
+			]
+		}
+	)
+
+	# Bulk recompute rather than one save() per Job Card: this can run across
+	# every Job Card on the site on every migrate, and a plain UPDATE neither
+	# re-fires unrelated hooks (manufacture_guard is on Stock Entry, not Job
+	# Card, but there is no reason to risk it) nor pays per-row Python cost.
+	frappe.db.sql(
+		f"""
+		UPDATE `tabJob Card`
+		SET `{REJ_PERCENT_FIELD}` = CASE
+			WHEN IFNULL(`for_quantity`, 0) = 0 THEN 0
+			ELSE ROUND(IFNULL(`process_loss_qty`, 0) / `for_quantity` * 100, 2)
+		END
+		"""
+	)
+
+	_insert_rej_percent_column()
+	print(f"seplt: {REJ_PERCENT_LABEL} added to Job Card + backfilled (SO1-I137)")
+
+
+def _insert_rej_percent_column():
+	"""Add the Rej % entry to the saved view's column list, right after
+	"Process Loss Qty".
+
+	The saved list's own order is what the report displays in -- confirmed by
+	reading the live ``Report.json``, where "Operation" sits before
+	"Workstation" in the array despite an ``_index`` of 7 against 6.
+	``_index``/``insert_after_index`` are DataTable UI state that Frappe
+	re-derives when a user next touches the column picker; they are set here
+	to something consistent, but the list POSITION is what actually places
+	the column, and that is copied from ``INSERT_AFTER_FIELD`` exactly.
+	"""
+	report = frappe.db.get_value("Report", CUSTOM_REPORT, ["report_type", "json"], as_dict=True)
+
+	if not report or report.report_type != "Custom Report":
+		return  # saved view does not exist on this site, or isn't one any more
+
+	data = json.loads(report.json) if report.json else {}
+	columns = data.get("columns") or []
+
+	if any(c.get("fieldname") == REJ_PERCENT_FIELD for c in columns):
+		return  # already inserted (second and every later migrate)
+
+	position = next((i for i, c in enumerate(columns) if c.get("fieldname") == INSERT_AFTER_FIELD), None)
+	if position is None:
+		# "Process Loss Qty" itself isn't a saved column (any more, or on this
+		# site) -- nowhere sane to insert after, so do nothing rather than
+		# guess a position.
+		return
+
+	after = columns[position]
+	columns.insert(
+		position + 1,
+		{
+			"fieldname": REJ_PERCENT_FIELD,
+			"fieldtype": "Percent",
+			"label": REJ_PERCENT_LABEL,
+			"doctype": "Job Card",
+			"link_field": {"fieldname": "name", "names": {}},
+			"width": 80,
+			"id": REJ_PERCENT_FIELD,
+			"name": REJ_PERCENT_LABEL,
+			"editable": False,
+			"compareValue": None,
+			"_index": after.get("_index", position) + 1,
+		},
+	)
+	data["columns"] = columns
+
+	frappe.db.set_value("Report", CUSTOM_REPORT, "json", json.dumps(data))
+	frappe.clear_document_cache("Report", CUSTOM_REPORT)

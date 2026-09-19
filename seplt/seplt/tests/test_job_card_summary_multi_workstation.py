@@ -18,6 +18,7 @@ import json
 import frappe
 from frappe.desk.query_report import get_script, run, save_report
 from frappe.tests import IntegrationTestCase
+from frappe.utils import flt
 
 from erpnext.manufacturing.report.job_card_summary.job_card_summary import (
 	execute as core_execute,
@@ -29,10 +30,17 @@ from erpnext.manufacturing.report.job_card_summary.job_card_summary import (
 from seplt.seplt.report.job_card_summary_multi_workstation.job_card_summary_multi_workstation import (
 	CORE_REPORT,
 	CUSTOM_REPORT,
+	INSERT_AFTER_FIELD,
+	REJ_PERCENT_FIELD,
+	REJ_PERCENT_LABEL,
 	THIS_REPORT,
+	_insert_rej_percent_column,
+	compute_rej_percent,
 	execute,
 	install,
+	install_rej_percent,
 	normalise_multi_select_filters,
+	set_rej_percent,
 )
 
 
@@ -496,3 +504,282 @@ class TestSavedViewRepoint(IntegrationTestCase):
 		# into the ["in", [...]] shape this report uses internally
 		self.assertEqual(result["custom_filters"].get("work_order"), [])
 		self.assertNotIn("workstation", result["custom_filters"])
+
+
+# --------------------------------------------------------------------------
+# Rej % column -- SO1-I137
+# --------------------------------------------------------------------------
+
+
+class TestComputeRejPercent(IntegrationTestCase):
+	"""The formula itself, isolated from Job Card and the saved view."""
+
+	def test_ordinary_case(self):
+		self.assertEqual(compute_rej_percent(50, 1000), 5.0)
+
+	def test_uses_qty_to_manufacture_not_something_else(self):
+		"""SO1-I137: must divide by Qty To Manufacture -- pinned so a future
+		edit cannot quietly swap in Total Completed Qty instead."""
+		# 50 / 1000 = 5%. If Total Completed Qty (200) were used instead this
+		# would come out 25% -- different enough that a mistake cannot hide.
+		self.assertEqual(compute_rej_percent(process_loss_qty=50, for_quantity=1000), 5.0)
+		self.assertNotEqual(compute_rej_percent(50, 1000), 25.0)
+
+	def test_zero_qty_to_manufacture_is_zero_percent_not_an_error(self):
+		self.assertEqual(compute_rej_percent(50, 0), 0.0)
+		self.assertEqual(compute_rej_percent(0, 0), 0.0)
+
+	def test_none_qty_to_manufacture_is_zero_percent(self):
+		"""A Job Card whose for_quantity was never set (None, not 0)."""
+		self.assertEqual(compute_rej_percent(50, None), 0.0)
+
+	def test_zero_process_loss_is_zero_percent(self):
+		self.assertEqual(compute_rej_percent(0, 1000), 0.0)
+
+	def test_rounded_to_two_decimal_places(self):
+		# 1 / 3 * 100 = 33.333... -- must not leak extra precision
+		self.assertEqual(compute_rej_percent(1, 3), 33.33)
+
+	def test_full_rejection_is_100_percent(self):
+		self.assertEqual(compute_rej_percent(1000, 1000), 100.0)
+
+
+class TestSetRejPercent(IntegrationTestCase):
+	"""The Job Card ``validate`` hook. A plain ``_dict`` stands in for the doc --
+	the hook only reads two fields and sets a third, same as
+	``normalise_multi_select_filters`` above is tested without a real report
+	request."""
+
+	def test_sets_the_field_from_the_two_source_fields(self):
+		doc = frappe._dict(process_loss_qty=50, for_quantity=1000)
+		set_rej_percent(doc)
+		self.assertEqual(doc.custom_rej_percent, 5.0)
+
+	def test_zero_for_quantity_sets_zero(self):
+		doc = frappe._dict(process_loss_qty=50, for_quantity=0)
+		set_rej_percent(doc)
+		self.assertEqual(doc.custom_rej_percent, 0.0)
+
+
+class TestInstallRejPercent(IntegrationTestCase):
+	"""``install_rej_percent`` on Job Card itself: the field and the backfill.
+
+	Runs against real Job Cards already on this site rather than creating new
+	ones -- Job Card has enough upstream dependencies (Work Order, BOM,
+	Workstation, Operation) that building one from scratch is its own project,
+	and it adds nothing this test needs: the backfill is a plain SQL
+	recompute, and its correctness does not depend on how a Job Card came to
+	exist.
+	"""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		# Job Cards whose stored value differs depending on whether the
+		# formula used for_quantity or something else -- makes a wrong
+		# denominator fail loudly instead of coincidentally matching.
+		cls.sample = frappe.db.sql(
+			"""SELECT name, process_loss_qty, for_quantity
+			FROM `tabJob Card`
+			WHERE IFNULL(for_quantity, 0) != 0 AND IFNULL(process_loss_qty, 0) != 0
+			LIMIT 5""",
+			as_dict=True,
+		)
+		if not cls.sample:
+			raise RuntimeError(
+				"SO1-I137 tests need at least one Job Card with a nonzero "
+				"Process Loss Qty and Qty To Manufacture"
+			)
+		cls.zero_for_quantity = frappe.db.sql_list(
+			"""SELECT name FROM `tabJob Card` WHERE IFNULL(for_quantity, 0) = 0 LIMIT 3"""
+		)
+
+	def test_field_is_created(self):
+		install_rej_percent()
+		meta = frappe.get_meta("Job Card")
+		self.assertTrue(meta.has_field(REJ_PERCENT_FIELD))
+		field = meta.get_field(REJ_PERCENT_FIELD)
+		self.assertEqual(field.label, REJ_PERCENT_LABEL)
+		self.assertEqual(field.fieldtype, "Percent")
+		self.assertEqual(field.insert_after, INSERT_AFTER_FIELD)
+
+	def test_field_creation_is_idempotent(self):
+		install_rej_percent()
+		install_rej_percent()  # must not raise or duplicate the field
+		fields = frappe.get_all(
+			"Custom Field", filters={"dt": "Job Card", "fieldname": REJ_PERCENT_FIELD}
+		)
+		self.assertEqual(len(fields), 1)
+
+	def test_backfill_matches_the_formula_row_by_row(self):
+		"""The SQL backfill must agree with ``compute_rej_percent`` for real
+		data. Whether the formula itself uses the right denominator (Qty To
+		Manufacture, not Total Completed Qty) is pinned separately, with
+		controlled numbers, in ``TestComputeRejPercent`` -- real Job Cards
+		would only catch that mistake by coincidence, on rows where the two
+		denominators happen to differ enough to round differently.
+		"""
+		install_rej_percent()
+		for row in self.sample:
+			with self.subTest(job_card=row.name):
+				stored = frappe.db.get_value("Job Card", row.name, REJ_PERCENT_FIELD)
+				self.assertEqual(
+					flt(stored, 2),
+					compute_rej_percent(row.process_loss_qty, row.for_quantity),
+				)
+
+	def test_backfill_zero_for_quantity_is_zero_not_an_error(self):
+		install_rej_percent()  # must not raise dividing by zero
+		for name in self.zero_for_quantity:
+			with self.subTest(job_card=name):
+				self.assertEqual(frappe.db.get_value("Job Card", name, REJ_PERCENT_FIELD), 0)
+
+	def test_backfill_is_idempotent(self):
+		install_rej_percent()
+		first = frappe.db.get_value("Job Card", self.sample[0].name, REJ_PERCENT_FIELD)
+		install_rej_percent()
+		second = frappe.db.get_value("Job Card", self.sample[0].name, REJ_PERCENT_FIELD)
+		self.assertEqual(first, second)
+
+
+class TestRejPercentColumnInsertion(IntegrationTestCase):
+	"""``install_rej_percent`` on "JOB CARD SUMMARY V2": the column insert.
+
+	Builds the saved view the same way ``TestSavedViewRepoint`` does, with the
+	same "must not already exist" guard, but with its own column list that
+	includes a Process Loss Qty entry modelled exactly on the live one (a
+	column fetched from Job Card by ``name``) -- the case ``_insert_rej_percent
+	_column`` has to find and insert after.
+	"""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.filters = base_filters()
+		cls.addClassCleanup(frappe.clear_document_cache, "Report", CUSTOM_REPORT)
+
+	def setUp(self):
+		super().setUp()
+		if frappe.db.exists("Report", CUSTOM_REPORT):
+			raise RuntimeError(
+				f"'{CUSTOM_REPORT}' already exists on {frappe.local.site}. "
+				"These tests rebuild it from scratch and must not touch a real saved view."
+			)
+
+	def saved_columns(self, include_process_loss_qty=True):
+		columns, *_ = core_execute(frappe._dict(self.filters))
+		saved = [dict(c) for c in columns]
+		if include_process_loss_qty:
+			saved.append(
+				{
+					"fieldname": INSERT_AFTER_FIELD,
+					"fieldtype": "Float",
+					"label": "Process Loss Qty",
+					"doctype": "Job Card",
+					"link_field": {"fieldname": "name", "names": {}},
+					"width": 100,
+				}
+			)
+		return saved
+
+	def make_saved_view(self, columns):
+		doc = frappe.get_doc(
+			{
+				"doctype": "Report",
+				"report_name": CUSTOM_REPORT,
+				"is_standard": "No",
+				"report_type": "Custom Report",
+				"reference_report": THIS_REPORT,
+				"ref_doctype": "Job Card",
+				"module": "Manufacturing",
+				"json": json.dumps({"filters": dict(self.filters), "columns": columns}),
+			}
+		)
+		doc.insert(ignore_permissions=True)
+		self.addCleanup(frappe.delete_doc, "Report", CUSTOM_REPORT, force=True, ignore_permissions=True)
+
+	def saved_column_fieldnames(self):
+		raw = frappe.db.get_value("Report", CUSTOM_REPORT, "json")
+		return [c["fieldname"] for c in json.loads(raw)["columns"]]
+
+	def test_inserts_right_after_process_loss_qty(self):
+		self.make_saved_view(self.saved_columns())
+		fields_before = self.saved_column_fieldnames()
+		position = fields_before.index(INSERT_AFTER_FIELD)
+
+		_insert_rej_percent_column()
+
+		fields_after = self.saved_column_fieldnames()
+		self.assertEqual(fields_after[position + 1], REJ_PERCENT_FIELD)
+		# nothing else moved
+		self.assertEqual(
+			[f for f in fields_after if f != REJ_PERCENT_FIELD],
+			fields_before,
+		)
+
+	def test_new_column_is_shaped_like_the_other_fetched_columns(self):
+		"""Same fetch mechanism as Qty To Manufacture / Process Loss Qty:
+		``doctype`` + ``link_field`` naming the row's own ``name``."""
+		self.make_saved_view(self.saved_columns())
+		_insert_rej_percent_column()
+
+		raw = frappe.db.get_value("Report", CUSTOM_REPORT, "json")
+		column = next(c for c in json.loads(raw)["columns"] if c["fieldname"] == REJ_PERCENT_FIELD)
+
+		self.assertEqual(column["doctype"], "Job Card")
+		self.assertEqual(column["link_field"], {"fieldname": "name", "names": {}})
+		self.assertEqual(column["fieldtype"], "Percent")
+		self.assertEqual(column["label"], REJ_PERCENT_LABEL)
+
+	def test_is_idempotent(self):
+		self.make_saved_view(self.saved_columns())
+		_insert_rej_percent_column()
+		_insert_rej_percent_column()
+		_insert_rej_percent_column()
+
+		fields = self.saved_column_fieldnames()
+		self.assertEqual(fields.count(REJ_PERCENT_FIELD), 1)
+
+	def test_noop_when_process_loss_qty_is_not_a_saved_column(self):
+		self.make_saved_view(self.saved_columns(include_process_loss_qty=False))
+		before = self.saved_column_fieldnames()
+
+		_insert_rej_percent_column()  # must not raise or guess a position
+
+		self.assertEqual(self.saved_column_fieldnames(), before)
+		self.assertNotIn(REJ_PERCENT_FIELD, self.saved_column_fieldnames())
+
+	def test_noop_when_the_saved_view_does_not_exist(self):
+		_insert_rej_percent_column()  # must not raise
+		self.assertFalse(frappe.db.exists("Report", CUSTOM_REPORT))
+
+	def test_column_renders_a_real_value_through_the_desk_endpoint(self):
+		"""End to end: the exact code path the browser uses
+		(``frappe.desk.query_report.run``) actually fills the new column in,
+		not just that the saved json looks right.
+		"""
+		install_rej_percent()  # field + backfill
+		self.make_saved_view(self.saved_columns())
+		_insert_rej_percent_column()
+
+		job_card = frappe.db.sql(
+			"""SELECT name, process_loss_qty, for_quantity FROM `tabJob Card`
+			WHERE docstatus < 2 AND company = %(company)s
+				AND posting_date BETWEEN %(from_date)s AND %(to_date)s
+				AND IFNULL(for_quantity, 0) != 0
+			LIMIT 1""",
+			self.filters,
+			as_dict=True,
+		)
+		if not job_card:
+			self.skipTest("no Job Card in the test window has a nonzero Qty To Manufacture")
+		job_card = job_card[0]
+
+		result = run(report_name=CUSTOM_REPORT, filters=json.dumps(dict(self.filters)))
+		rows = [r for r in result["result"] if isinstance(r, dict) and r.get("name") == job_card.name]
+		self.assertTrue(rows, f"{job_card.name} did not come back in the report")
+
+		self.assertEqual(
+			flt(rows[0].get(REJ_PERCENT_FIELD), 2),
+			compute_rej_percent(job_card.process_loss_qty, job_card.for_quantity),
+		)

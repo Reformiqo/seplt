@@ -81,6 +81,10 @@ doctype_js = {
 after_migrate = [
 	"seplt.seplt.validations.manufacture_guard.install",
 	"seplt.seplt.report.job_card_summary_multi_workstation.job_card_summary_multi_workstation.install",
+	# Rej % column on JOB CARD SUMMARY V2 (SO1-I137). Separate entry from the
+	# line above: that one re-points the saved view at this report, this one
+	# adds the field + column to it. Idempotent.
+	"seplt.seplt.report.job_card_summary_multi_workstation.job_card_summary_multi_workstation.install_rej_percent",
 	# Guards the India Compliance monkeypatch below: fails the migrate if the
 	# functions it rebinds have moved, rather than silently reverting to
 	# India Compliance's stock validation.
@@ -168,6 +172,13 @@ doc_events = {
 	},
 	"Subcontracting Inward Order": {
 		"on_submit": "seplt.overrides.subcontracting_inward_order.set_received_qty_on_submit"
+	},
+	"Job Card": {
+		# Keeps custom_rej_percent current -- SO1-I137.
+		"validate": (
+			"seplt.seplt.report.job_card_summary_multi_workstation"
+			".job_card_summary_multi_workstation.set_rej_percent"
+		),
 	},
 }
 
