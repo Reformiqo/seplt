@@ -98,6 +98,8 @@ the master makes the column deterministic and keeps purchase and
 subcontracting rows consistent with each other.  No figure is affected.
 """
 
+from inspect import signature
+
 import frappe
 from frappe import _
 
@@ -189,7 +191,24 @@ def execute(filters=None):
 	conditions = get_columns(filters, TRANS)
 	data = get_data(filters, conditions)
 
-	return conditions["columns"], data, None, get_chart_data(data, filters)
+	return conditions["columns"], data, None, _build_chart(data, conditions, filters)
+
+
+def _build_chart(data, conditions, filters):
+	"""Call ERPNext's ``get_chart_data`` with whichever signature the installed
+	version exposes.
+
+	ERPNext harmonised ``purchase_receipt_trends.get_chart_data`` to the 3-arg
+	``(data, conditions, filters)`` form used by the other ``*_trends`` reports;
+	older benches (e.g. the 16.6.x local dev bench) still take ``(data,
+	filters)``.  The cloud bench runs 16.32.3 (3-arg), which raised
+	``TypeError: get_chart_data() missing 1 required positional argument:
+	'filters'`` because ``filters`` was being passed as ``conditions`` (SO1-I139).
+	Dispatch on the real signature so the report works on both.
+	"""
+	if len(signature(get_chart_data).parameters) >= 3:
+		return get_chart_data(data, conditions, filters)
+	return get_chart_data(data, filters)
 
 
 def get_data(filters, conditions):
