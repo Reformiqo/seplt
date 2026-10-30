@@ -89,6 +89,9 @@ after_migrate = [
 	# functions it rebinds have moved, rather than silently reverting to
 	# India Compliance's stock validation.
 	"seplt.overrides.india_compliance_taxes.assert_patch_targets",
+	# Same for the Actual Qty column on ERPNext's Production Planning Report
+	# (SO1-I148): fails the migrate if the report class it patches has moved.
+	"seplt.overrides.production_planning_report.assert_patch_targets",
 ]
 
 
@@ -211,9 +214,11 @@ doc_events = {
 # Overriding Methods
 # ------------------------------
 #
-# override_whitelisted_methods = {
-# 	"frappe.desk.doctype.event.event.get_events": "seplt.event.get_events"
-# }
+override_whitelisted_methods = {
+	# Adds the From Date / To Date / Customer filters to ERPNext's Production
+	# Planning Report form (SO1-I148); every other report passes through.
+	"frappe.desk.query_report.get_script": "seplt.overrides.production_planning_report.get_script",
+}
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,
@@ -233,12 +238,16 @@ doc_events = {
 
 # Request Events
 # ----------------
-# before_request = ["seplt.utils.before_request"]
+# Installs the Actual Qty column on ERPNext's Production Planning Report
+# (SO1-I148) -- see seplt/overrides/production_planning_report.py. Frappe has
+# no hook for overriding a report, so the patch goes in before anything can
+# run it: every request, and every background job (prepared reports, exports).
+before_request = ["seplt.overrides.production_planning_report.apply"]
 # after_request = ["seplt.utils.after_request"]
 
 # Job Events
 # ----------
-# before_job = ["seplt.utils.before_job"]
+before_job = ["seplt.overrides.production_planning_report.apply"]
 # after_job = ["seplt.utils.after_job"]
 
 # User Data Protection
