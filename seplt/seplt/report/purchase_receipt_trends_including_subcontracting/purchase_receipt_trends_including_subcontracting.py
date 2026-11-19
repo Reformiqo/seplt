@@ -30,6 +30,24 @@ Subcontracting Receipt.  Filters, period bucketing, total row and chart shape
 are therefore identical to the standard report by construction, and cannot
 drift when ERPNext changes.
 
+Two trends engines (ERPNext 16.55 rewrite)
+-------------------------------------------
+ERPNext 16.55 rewrote ``erpnext.controllers.trends`` on the query builder.
+``get_columns`` no longer returns SQL fragments (``based_on_select`` as a
+string, ``addl_tables``, ``addl_tables_relational_cond``): it returns lists of
+query-builder terms plus a ``joins`` list, all addressed to
+```tabPurchase Receipt``` / ```tabPurchase Receipt Item```.  Pasting those
+into a SQL string raised ``KeyError: 'addl_tables'`` on the cloud bench.
+
+On the new engine (``"joins" in conditions``) the report builds the query with
+``frappe.qb`` exactly as core's ``get_base_query`` does, but puts the UNION ALL
+views in FROM / JOIN *under the core table names* (see ``DerivedTable``), so
+every core term, join and period bucket resolves against the union unchanged.
+It also applies the three criteria the new engine added -- the Project
+guard, the Item filter and user-permission match conditions (the latter per
+union branch, against each branch's own doctype).  Older benches (``joins``
+absent, e.g. the 16.6.x dev bench) keep the original string-built query.
+
 Field mapping (the two doctypes are not column-compatible)
 ----------------------------------------------------------
 ``Subcontracting Receipt Item`` has no ``stock_qty``, no ``base_net_amount``
@@ -102,6 +120,9 @@ from inspect import signature
 
 import frappe
 from frappe import _
+from frappe.desk.reportview import build_match_conditions
+from pypika.queries import Table
+from pypika.utils import format_quotes
 
 from erpnext.controllers.trends import calculate_total_row, get_columns
 from erpnext.stock.report.purchase_receipt_trends.purchase_receipt_trends import get_chart_data
@@ -113,7 +134,9 @@ TRANS = "Purchase Receipt"
 
 # "Group By" options offered by the standard purchase trends filters
 # (erpnext/public/js/purchase_trends_filters.js:63).  Whitelisted rather than
-# interpolated blindly, because the value lands in the SELECT clause.
+# interpolated blindly, because the value lands in the SELECT clause.  This is
+# the legacy (string-engine) form; the query-builder form is built in
+# ``_group_by_term``.
 GROUP_BY_COLUMN = {"Item": "t2.item_code", "Supplier": "t1.supplier"}
 
 # Number of leading columns already filled by ``based_on_select`` before the
@@ -211,12 +234,158 @@ def _build_chart(data, conditions, filters):
 	return get_chart_data(data, filters)
 
 
+class DerivedTable(Table):
+	"""A raw-SQL derived table that stands in for a real table in a ``frappe.qb`` query.
+
+	It keeps the real table's name, so it compares and hashes equal to
+	``frappe.qb.DocType(<that doctype>)`` -- which is what lets core's terms and
+	join criteria (built against the real table) pass pypika's join validation
+	-- but renders as ``(<sql>) `<table name>```.  MariaDB then resolves every
+	```tabPurchase Receipt`.<col>`` reference against the union instead.
+	"""
+
+	def __init__(self, sql, stands_in_for):
+		super().__init__(stands_in_for)
+		self._derived_sql = sql
+
+	def get_sql(self, **kwargs):
+		return "({}) {}".format(self._derived_sql, format_quotes(self._table_name, kwargs.get("quote_char")))
+
+	def __hash__(self):
+		return hash(Table(self._table_name))
+
+
 def get_data(filters, conditions):
-	group_by_column = None
-	if filters.get("group_by"):
-		group_by_column = GROUP_BY_COLUMN.get(filters.get("group_by"))
-		if not group_by_column:
-			frappe.throw(_("Group By {0} is not supported").format(filters.get("group_by")))
+	if "joins" in conditions:
+		return _get_data_qb(filters, conditions)
+	return _get_data_legacy(filters, conditions)
+
+
+# --- ERPNext 16.55+ query-builder engine ------------------------------------
+
+
+def _validate_group_by(filters):
+	group_by = filters.get("group_by")
+	if group_by and group_by not in GROUP_BY_COLUMN:
+		frappe.throw(_("Group By {0} is not supported").format(group_by))
+	return group_by
+
+
+def _group_by_term(group_by, t1, t2):
+	return {"Item": t2.item_code, "Supplier": t1.supplier}[group_by]
+
+
+def _get_data_qb(filters, conditions):
+	group_by = _validate_group_by(filters)
+
+	doctypes = resolve_doctypes(filters)
+	amount_basis = resolve_amount_basis(filters)
+	parent_sql, item_sql = union_sources(doctypes, amount_basis)
+
+	t1 = frappe.qb.DocType(TRANS)
+	t2 = frappe.qb.DocType(f"{TRANS} Item")
+
+	year_start_date, year_end_date = frappe.get_cached_value(
+		"Fiscal Year", filters.get("fiscal_year"), ["year_start_date", "year_end_date"]
+	)
+
+	# Mirrors erpnext.controllers.trends.get_base_query.  Purchase Receipt always
+	# buckets on posting_date (trends.get_trans_date), so that is used directly.
+	base = (
+		frappe.qb.from_(DerivedTable(parent_sql, t1.get_table_name()))
+		.inner_join(DerivedTable(item_sql, t2.get_table_name()))
+		.on((t2.parent == t1.name) & (t2.source_doctype == t1.source_doctype))
+	)
+	for table, criterion in conditions["joins"]:
+		base = base.inner_join(table).on(criterion)
+
+	base = (
+		base.where(t1.company == filters.get("company"))
+		.where(t1.posting_date[year_start_date:year_end_date])
+		.where(t1.docstatus == 1)
+	)
+	# The extra criteria of trends.get_conditions.  Permission match conditions
+	# are applied per union branch instead (``_parent_source``), because core's
+	# version would restrict the union to Purchase Receipt names only.
+	if filters.get("based_on") == "Project":
+		base = base.where(conditions["group_by"][0] != "")
+	if item_codes := _item_codes(filters):
+		base = base.where(t2.item_code.isin(item_codes))
+
+	parents = (
+		base.select(*conditions["based_on_select"], *conditions["period_wise_select"])
+		.groupby(*conditions["group_by"])
+		.run(as_list=1)
+	)
+	company_currency = conditions.get("company_currency")
+
+	if not group_by:
+		parents.append(calculate_total_row(parents, conditions["columns"], company_currency))
+		return parents
+
+	sel_col = _group_by_term(group_by, t1, t2)
+	company = frappe.qb.DocType("Company")
+	# leading column is the Based On key, used only to attach the row to its
+	# parent; the rest mirrors core's per-group query (currency, group value,
+	# period columns).
+	children = (
+		base.select(conditions["group_by"][0], company.default_currency, sel_col, *conditions["period_wise_select"])
+		.groupby(*conditions["group_by"], sel_col)
+		.run(as_list=1)
+	)
+
+	data = _interleave_group_by_rows(filters, conditions, parents, children)
+	# total over the consolidated rows only, so group rows are not counted twice
+	data.append(calculate_total_row(parents, conditions["columns"], company_currency))
+	return data
+
+
+def _item_codes(filters):
+	item_codes = filters.get("item_code") or []
+	if isinstance(item_codes, str):
+		item_codes = [item_codes]
+	return item_codes
+
+
+def _interleave_group_by_rows(filters, conditions, parents, children):
+	"""Interleave one sub-row per Group By value under each Based On row.
+
+	Same output shape as core's group_by branch of ``trends.get_data``, but
+	resolved in a single grouped query instead of two queries per Based On
+	value.  ``children`` rows are ``[based_on_key, currency, group value,
+	*period columns]``.
+	"""
+	grouped = {}
+	for child in children:
+		grouped.setdefault(child[0], []).append(child[1:])
+
+	columns = conditions["columns"]
+	ind = columns.index(conditions["grbc"][0])
+	inc = BASED_ON_OFFSET.get(filters.get("based_on"), 1)
+
+	data = []
+	for parent in parents:
+		based_on_key = parent[0]
+		# blank cell under the Group By column on the consolidated row
+		parent.insert(ind, "")
+		data.append(parent)
+
+		for child in grouped.get(based_on_key, []):
+			row = [""] * len(columns)
+			row[ind - 1] = child[0]  # currency
+			for j in range(1, len(columns) - inc):
+				row[j + inc] = child[j]
+			data.append(row)
+
+	return data
+
+
+# --- pre-16.55 string engine ------------------------------------------------
+
+
+def _get_data_legacy(filters, conditions):
+	group_by = _validate_group_by(filters)
+	group_by_column = GROUP_BY_COLUMN[group_by] if group_by else None
 
 	doctypes = resolve_doctypes(filters)
 	amount_basis = resolve_amount_basis(filters)
@@ -243,17 +412,12 @@ def get_data(filters, conditions):
 		parents.append(calculate_total_row(parents, conditions["columns"]))
 		return parents
 
-	return add_group_by_rows(
+	return _add_group_by_rows_legacy(
 		filters, conditions, parent_table, item_table, values, parents, group_by_column
 	)
 
 
-def add_group_by_rows(filters, conditions, parent_table, item_table, values, parents, sel_col):
-	"""Interleave one sub-row per Group By value under each Based On row.
-
-	Same output shape as erpnext/controllers/trends.py:129-196, but resolved in
-	a single grouped query instead of two queries per Based On value.
-	"""
+def _add_group_by_rows_legacy(filters, conditions, parent_table, item_table, values, parents, sel_col):
 	children = frappe.db.sql(
 		build_query(
 			conditions,
@@ -270,35 +434,14 @@ def add_group_by_rows(filters, conditions, parent_table, item_table, values, par
 		as_list=1,
 	)
 
-	grouped = {}
-	for child in children:
-		grouped.setdefault(child[0], []).append(child[1:])
-
-	columns = conditions["columns"]
-	ind = columns.index(conditions["grbc"][0])
-	inc = BASED_ON_OFFSET.get(filters.get("based_on"), 1)
-
-	data = []
-	for parent in parents:
-		based_on_key = parent[0]
-		# blank cell under the Group By column on the consolidated row
-		parent.insert(ind, "")
-		data.append(parent)
-
-		for child in grouped.get(based_on_key, []):
-			row = [""] * len(columns)
-			row[ind - 1] = child[0]  # currency
-			for j in range(1, len(columns) - inc):
-				row[j + inc] = child[j]
-			data.append(row)
-
+	data = _interleave_group_by_rows(filters, conditions, parents, children)
 	# total over the consolidated rows only, so group rows are not counted twice
-	data.append(calculate_total_row(parents, columns))
+	data.append(calculate_total_row(parents, conditions["columns"]))
 	return data
 
 
 def build_query(conditions, parent_table, item_table, select, group_by):
-	"""Rebuild core's trends query against the union tables.
+	"""Rebuild the pre-16.55 core trends query against the union tables.
 
 	Core's extra ``cond`` clauses (erpnext/controllers/trends.py:75-83) are all
 	inert for Purchase Receipt: the project guard compares ``based_on_select``
@@ -327,7 +470,13 @@ def build_query(conditions, parent_table, item_table, select, group_by):
 
 
 def source_tables(doctypes, amount_basis):
-	"""Return the ``t1`` (parent) and ``t2`` (item) derived tables.
+	"""Return the ``t1`` (parent) and ``t2`` (item) derived tables (legacy engine)."""
+	parent, item = union_sources(doctypes, amount_basis)
+	return f"({parent}) t1", f"({item}) t2"
+
+
+def union_sources(doctypes, amount_basis):
+	"""Return the parent and item UNION ALL SQL, unaliased.
 
 	``source_doctype`` is carried on both sides and joined on, so a Purchase
 	Receipt could never pick up a Subcontracting Receipt Item even if the two
@@ -338,10 +487,20 @@ def source_tables(doctypes, amount_basis):
 		"Subcontracting Receipt": _subcontracting_receipt_item_source(amount_basis),
 	}
 
-	parent = " union all ".join(_PARENT_SOURCES[d] for d in doctypes)
+	parent = " union all ".join(_parent_source(d) for d in doctypes)
 	item = " union all ".join(item_sources[d] for d in doctypes)
+	return parent, item
 
-	return f"({parent}) t1", f"({item}) t2"
+
+def _parent_source(doctype):
+	"""One union branch, narrowed by the user's permission match conditions on
+	that branch's own doctype -- the per-branch equivalent of core's
+	``trends.get_permission_condition``.  The branch reads the real table
+	unaliased, so the ```tab<doctype>`.<field>`` references resolve."""
+	sql = _PARENT_SOURCES[doctype]
+	if match_conditions := build_match_conditions(doctype):
+		sql += f" and ({match_conditions})"
+	return sql
 
 
 def resolve_doctypes(filters):
