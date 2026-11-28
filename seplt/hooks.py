@@ -30,7 +30,9 @@ app_license = "mit"
 # include js in doctype views
 doctype_js = {
     "Stock Entry" : "public/js/stock_entry.js",
-    "Subcontracting Inward Order" : "public/js/subcontracting_inward_order.js"
+    "Subcontracting Inward Order" : "public/js/subcontracting_inward_order.js",
+    # Sales Order picker without fully delivered orders (SO1-I150).
+    "Production Plan" : "public/js/production_plan.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -141,7 +143,9 @@ after_migrate = [
 
 override_doctype_class = {
 	"Stock Entry": "seplt.overrides.stock_entry.CustomStockEntry",
-	"Work Order": "seplt.overrides.work_order.CustomWorkOrder"
+	"Work Order": "seplt.overrides.work_order.CustomWorkOrder",
+	# "Get Sales Orders" without fully delivered orders (SO1-I150).
+	"Production Plan": "seplt.overrides.production_plan.CustomProductionPlan",
 }
 
 # Document Events
